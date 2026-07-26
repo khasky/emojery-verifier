@@ -120,9 +120,8 @@ function serializeOp(op, w) {
   if (op.tag === OP_APPEND || op.tag === OP_PREPEND) w.varbytes(op.arg ?? new Uint8Array());
 }
 
-// Max op-nesting depth for a parsed timestamp tree. Each level of op nesting is
-// one recursive parseStamp frame, so an attacker-shaped calendar response with a
-// deeply nested op chain could otherwise blow the JS stack.
+// Max op-nesting depth for a parsed timestamp tree — each nesting level is one recursive
+// parseStamp frame, so an attacker-shaped calendar response could otherwise blow the JS stack.
 const MAX_STAMP_DEPTH = 1000;
 
 // Parse a timestamp tree structurally — no hashing, so this stays synchronous.
@@ -225,9 +224,8 @@ export function mergeStamp(into, from) {
   }
 }
 
-// Apply one op to a message. Only sha256 is needed to reach a calendar/bitcoin
-// commitment; ripemd160/sha1/keccak never appear in public-calendar paths, so we
-// fail loudly rather than pull a hashing dependency into the verifier.
+// Only sha256 is needed to reach a calendar/bitcoin commitment; ripemd160/sha1/keccak
+// never appear in public-calendar paths, so fail loudly rather than pull in a hashing dependency.
 export async function applyOp(op, msg) {
   switch (op.tag) {
     case OP_APPEND:
@@ -241,11 +239,10 @@ export async function applyOp(op, msg) {
   }
 }
 
-// Earliest (minimum) Bitcoin attestation height in the tree, or null if none
-// (= still pending). A proof merged from several calendars carries several
-// Bitcoin attestations, and serialization reorders the tree — so "first found"
-// is nondeterministic. The minimum is stable, and it's the height the sidecar
-// records.
+// Earliest (minimum) Bitcoin attestation height in the tree, or null if still pending.
+// A proof merged from several calendars carries several Bitcoin attestations and
+// serialization reorders the tree, so "first found" is nondeterministic — the minimum
+// is stable, and it's the height the sidecar records.
 export function bitcoinHeight(stamp) {
   let best = null;
   for (const a of stamp.attestations) {

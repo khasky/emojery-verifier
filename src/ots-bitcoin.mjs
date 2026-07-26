@@ -82,11 +82,10 @@ export async function verifyDetachedOtsProof({
     throw new Error(`OTS: no Bitcoin attestation found${suffix}`);
   }
 
-  // Validate every attestation, not just the first that passes: a proof merged
-  // from several calendars anchors in several blocks, and the sidecar's recorded
-  // height must be checked against the full set of genuinely anchored heights.
-  // `height`/`blockHash`/`merkleRoot` describe the earliest anchored block;
-  // `heights` lists every anchored height, ascending.
+  // Validate every attestation, not just the first that passes: a proof merged from
+  // several calendars anchors in several blocks, and the sidecar's recorded height must
+  // be checked against the full set of genuinely anchored heights. The returned
+  // height/blockHash/merkleRoot describe the earliest anchored block; `heights` lists all.
   const attempts = [];
   const anchored = new Map(); // height -> { blockHash, merkleRoot }
   for (const att of [...attestations].sort((a, b) => a.height - b.height)) {

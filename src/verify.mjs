@@ -98,9 +98,8 @@ async function getText(url) {
 }
 
 // --json: emit ONE machine-readable summary on stdout (consumed by the status-page
-// ingest job) instead of the human report. The verification LOGIC is unchanged — this
-// only adds output formatting + a per-check accumulator. In --json mode the human
-// PASS/FAIL + info lines are redirected to stderr so stdout carries only the JSON.
+// ingest job) instead of the human report; human PASS/FAIL + info lines are redirected
+// to stderr so stdout carries only the JSON. The verification LOGIC is unchanged.
 const JSON_MODE = process.argv.includes("--json");
 if (JSON_MODE) console.log = (...a) => console.error(...a);
 
@@ -121,10 +120,8 @@ function check(ok, msg, key) {
   if (key) record(key, ok ? "pass" : "fail");
 }
 
-// 6. (optional, --ots) deep audit: the matured OpenTimestamps proof anchors the
-//    signed checkpoint root in a Bitcoin block. The .ots is verified by the
-//    dependency-clean built-in verifier; --ots-external can add an independent
-//    official CLI cross-check.
+// 6. (--ots) deep audit: the matured OpenTimestamps proof anchors the signed checkpoint
+//    root in a Bitcoin block; --ots-external adds an independent official-CLI cross-check.
 async function verifyOts(repo, pubkey, btcApi, otsExternal) {
   if (!repo) {
     check(false, "OTS: --ots needs --repo (the .ots proof lives in the log repo)", "ots");
@@ -208,12 +205,10 @@ function githubSlugFromRawBase(repo) {
   return m ? { owner: m[1], repo: m[2], ref: m[3] } : null;
 }
 
-// List file names in a log-repo directory via the GitHub contents API.
-// Returns { names } on success, { rateLimited: true } when throttled,
-// { missing: true } for an absent directory, or null for a non-GitHub base.
-// GITHUB_TOKEN (optional) lifts the 60/h unauthenticated api.github.com quota —
-// shared CI runner IPs hit it routinely. A rate-limited listing is GitHub
-// throttling us, not tamper evidence, so callers downgrade to a skip.
+// List file names in a log-repo directory via the GitHub contents API. Returns { names },
+// { rateLimited: true } when throttled, { missing: true } for an absent directory, or
+// null for a non-GitHub base. GITHUB_TOKEN (optional) lifts the 60/h unauthenticated
+// quota; a rate-limited listing is GitHub throttling us, not tamper evidence → skip.
 async function listRepoDir(repo, dir) {
   const slug = githubSlugFromRawBase(repo);
   if (!slug) return null;
@@ -247,11 +242,10 @@ async function fetchCheckpointArchive(repo) {
   return { shards, sths };
 }
 
-// Verify the published checkpoint history lies on one append-only line:
-// signatures, per-tree_size uniqueness, ts monotonicity, and every archived
-// root replayed from today's leaves. `leaves` = recomputed leaf hashes.
-// Returns the per-tree_size STH map for downstream checks (--rekor), or null
-// when the archive could not be read.
+// Verify the published checkpoint history lies on one append-only line: signatures,
+// per-tree_size uniqueness, ts monotonicity, and every archived root replayed from
+// today's leaves. Returns the per-tree_size STH map for the Rekor check, or null when
+// the archive could not be read.
 async function verifyCheckpointArchive(repo, pubkey, cp, leaves) {
   let archive;
   try {
@@ -328,11 +322,10 @@ async function verifyCheckpointArchive(repo, pubkey, cp, leaves) {
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const DAY_MS = 86_400_000;
 
-// Verify stats/<day>.json commitments: signature over the canonical bytes,
-// gap-free day series, and the three log-derivable aggregates recomputed from
-// the entries (votes / unique_user_refs / revokes). new_accounts is an
-// operator commitment (shape-checked only), as is epoch_continuity (needs the
-// secret salt by design).
+// Verify stats/<day>.json commitments: signature over the canonical bytes, gap-free day
+// series, and the three log-derivable aggregates recomputed from the entries (votes /
+// unique_user_refs / revokes). new_accounts and epoch_continuity are operator
+// commitments, shape-checked only (the latter needs the secret salt by design).
 async function verifyStatsFiles(repo, pubkey, cp, entries) {
   let listed;
   try {
@@ -669,11 +662,9 @@ async function main() {
     record("stats", "skip");
   }
 
-  // 3d. (default; --no-rekor to skip) the newest checkpoint anchored to Sigstore
-  //     Rekor really is there, carrying exactly our signed STH bytes. An
-  //     unreachable Rekor downgrades to a skip inside verifyRekor — only a sidecar
-  //     that disagrees with the archived checkpoint, or a resolved Rekor entry
-  //     whose bytes don't match our STH, is a hard fail.
+  // 3d. (default; --no-rekor to skip) the newest checkpoint anchored to Sigstore Rekor
+  //     really is there, carrying exactly our signed STH bytes. An unreachable Rekor
+  //     downgrades to a skip inside verifyRekor; only disagreeing bytes are a hard fail.
   if (!rekorDisabled && repo) {
     await verifyRekor(repo, pubkey, cp, archiveBySize);
   } else {
