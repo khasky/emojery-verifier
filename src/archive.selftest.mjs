@@ -35,7 +35,7 @@ const tamperedRoots = await merkleRootsAtSizes(tampered, [5]);
 check(bytesToHex(tamperedRoots.get(5)) !== bytesToHex(roots.get(5)), "a tampered leaf changes the prefix root");
 
 // --- signed daily stats contract ---------------------------------------------
-// Canonical bytes are the cross-impl contract (workers lib/log-stats.ts) — pin
+// Canonical bytes are the cross-impl contract with the backend signer — pin
 // them literally.
 const stats = { day: "2026-07-18", new_accounts: 5, votes: 42, unique_user_refs: 17, revokes: 3 };
 check(

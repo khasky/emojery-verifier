@@ -147,7 +147,7 @@ export function verifySignature(pubRawB64, sigBytes, msgBytes) {
 }
 
 // Canonical signed bytes of a daily stats file — the fixed text rendering the
-// backend signs (kept in lockstep with workers lib/log-stats.ts). Signing a
+// backend signs (kept in lockstep with the backend's stats signer). Signing a
 // text form, not the JSON bytes, keeps the signature independent of JSON key
 // order/whitespace.
 export function statsCanonicalBytes(s) {
@@ -378,8 +378,8 @@ export function checkWipeCompleteness(entries, tipTs, graceMs = WIPE_GRACE_MS) {
 // Recompute a leaf hash from an /log/entries row (does NOT trust row.leaf_hash).
 export function leafHashFromEntry(e) {
   if (e.op === OP_REVOKE) {
-    // A revoke leaf serializes user_ref as NULL and appends revoke fields; the
-    // stored user_ref sentinel in the DB row is NOT part of the canonical bytes.
+    // A revoke leaf serializes user_ref as NULL and appends revoke fields; any
+    // user_ref present on the row is NOT part of the canonical bytes.
     return leafHash({
       seq: BigInt(e.seq),
       ts: e.ts,
