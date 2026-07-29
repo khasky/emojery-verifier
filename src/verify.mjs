@@ -97,9 +97,7 @@ async function getText(url) {
   return res.text();
 }
 
-// --json: emit ONE machine-readable summary on stdout (consumed by the status-page
-// ingest job) instead of the human report; human PASS/FAIL + info lines are redirected
-// to stderr so stdout carries only the JSON. The verification LOGIC is unchanged.
+// --json (see header). Redirect human log lines to stderr so stdout carries only the JSON summary.
 const JSON_MODE = process.argv.includes("--json");
 if (JSON_MODE) console.log = (...a) => console.error(...a);
 
@@ -120,8 +118,7 @@ function check(ok, msg, key) {
   if (key) record(key, ok ? "pass" : "fail");
 }
 
-// 6. (--ots) deep audit: the matured OpenTimestamps proof anchors the signed checkpoint
-//    root in a Bitcoin block; --ots-external adds an independent official-CLI cross-check.
+// Check 6 (--ots, see header). --ots-external adds an independent official-CLI cross-check.
 async function verifyOts(repo, pubkey, btcApi, otsExternal) {
   if (!repo) {
     check(false, "OTS: --ots needs --repo (the .ots proof lives in the log repo)", "ots");
