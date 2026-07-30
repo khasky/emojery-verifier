@@ -4,7 +4,7 @@
   "type": "module",
   "description": "Standalone CLI verifier for Web Reactions public counts and signed checkpoints",
   "license": "GPL-3.0-or-later",
-  "author": "khasky (https://github.com/khasky)",
+  "author": "khasky",
   "homepage": "https://github.com/khasky/web-reactions-verifier#readme",
   "repository": {
     "type": "git",
