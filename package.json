@@ -1,11 +1,23 @@
 {
   "name": "web-reactions-verifier",
-  "version": "1.0.0",
-  "type": "module",
-  "description": "Standalone CLI verifier for Web Reactions public counts and signed checkpoints",
+  "private": true,
+  "version": "0.1.0",
   "license": "GPL-3.0-or-later",
   "author": "khasky",
-  "homepage": "https://github.com/khasky/web-reactions-verifier#readme",
+  "description": "Standalone CLI verifier for Web Reactions public counts and signed checkpoints",
+  "keywords": [
+    "web-reactions",
+    "transparency-log",
+    "verifier",
+    "cli",
+    "merkle",
+    "merkle-tree",
+    "ed25519",
+    "opentimestamps",
+    "checkpoint",
+    "bitcoin"
+  ],
+  "homepage": "https://webreactions.app",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/khasky/web-reactions-verifier.git"
@@ -27,14 +39,14 @@
       "url": "https://ko-fi.com/khasky"
     }
   ],
-  "keywords": [
-    "web-reactions",
-    "transparency-log",
-    "verifier",
-    "merkle",
-    "ed25519",
-    "opentimestamps"
-  ],
+  "type": "module",
+  "packageManager": "pnpm@11.13.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@noble/ed25519": "^2.1.0"
+  },
   "bin": {
     "web-reactions-verify": "src/verify.mjs"
   },
@@ -46,12 +58,5 @@
   "scripts": {
     "verify": "node src/verify.mjs",
     "selftest": "node src/revoke.selftest.mjs && node src/ots.selftest.mjs && node src/archive.selftest.mjs"
-  },
-  "engines": {
-    "node": ">=20"
-  },
-  "packageManager": "pnpm@11.13.0",
-  "dependencies": {
-    "@noble/ed25519": "^2.1.0"
   }
 }
