@@ -142,6 +142,25 @@ forward, self-referential, or duplicated, and confirms that
 `GET /log/revocations` matches the `op=4` leaves actually present in the
 anchored log.
 
+#### Reading the revocation feed yourself
+
+`GET /log/revocations` has three forms, and **every one of them answers
+`has_more`** — a page that had to stop short says so, so a partial answer can
+never be mistaken for the whole list:
+
+| Request | Returns | `has_more` means | `next_from` |
+| --- | --- | --- | --- |
+| `?from=&to=` | the `op=4` leaves in that `seq` range, capped at 1000 `seq` values | always `false` — the range itself bounds the answer | `null` |
+| `?target=site/id[&from=]` | one target's tombstones, 1000 per page, keyset-paginated by `seq` | more pages exist for this target | pass it back as `&from=` |
+| no parameters | the 1000 newest tombstones | older tombstones exist | `null` — use the range form to walk back |
+
+`revocations` is always ascending by `seq`.
+
+This verifier reads the range form and pages it itself, so it always sees the
+whole track. If you write your own auditor, page it the same way: the bare form
+is a browsable "what happened lately" view, not the full history, and stopping
+at its first response undercounts a log with more than 1000 tombstones.
+
 Revocations are whole-account. There is no per-vote reversal: erasing or
 deactivating an account revokes every entry that account wrote. The verifier
 enforces this as its account-wipe completeness check — if any entry of a
