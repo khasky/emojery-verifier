@@ -152,7 +152,7 @@ export async function runExternalOts({
   otsBytes,
   timeoutMs = EXTERNAL_TIMEOUT_MS,
 }) {
-  const dir = await mkdtemp(path.join(tmpdir(), "web-reactions-ots-"));
+  const dir = await mkdtemp(path.join(tmpdir(), "webemoji-ots-"));
   const proofPath = path.join(dir, "proof.ots");
   try {
     await writeFile(proofPath, Buffer.from(otsBytes));

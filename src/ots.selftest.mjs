@@ -186,7 +186,7 @@ async function main() {
   check(twoOk.height === 800003, "built-in OTS verifier reports the earliest of several anchored blocks");
   check(twoOk.heights.join(",") === "800003,800007", "built-in OTS verifier lists every anchored height ascending");
 
-  const dir = await mkdtemp(path.join(tmpdir(), "web-reactions-ots-selftest-"));
+  const dir = await mkdtemp(path.join(tmpdir(), "webemoji-ots-selftest-"));
   try {
     const okHelper = path.join(dir, "ots-ok.mjs");
     const failHelper = path.join(dir, "ots-fail.mjs");

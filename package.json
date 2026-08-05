@@ -48,7 +48,7 @@
     "@noble/ed25519": "^2.1.0"
   },
   "bin": {
-    "web-reactions-verify": "src/verify.mjs"
+    "webemoji-verify": "src/verify.mjs"
   },
   "files": [
     "src",
