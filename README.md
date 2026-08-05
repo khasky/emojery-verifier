@@ -3,7 +3,7 @@
 A standalone, open-source tool that re-derives the Webemoji counters from the **public** log and checks them against the signed, externally-anchored checkpoint — so the totals are provable, not just promised. It talks only to the public API and the public log; it has no privileged access.
 
 This verifier is paired with the public data repository
-[`web-reactions-log`](https://github.com/khasky/webemoji-log). That repository
+[`webemoji-log`](https://github.com/khasky/webemoji-log). That repository
 holds the signed checkpoints and OpenTimestamps proofs; this repository holds the
 code that checks them.
 

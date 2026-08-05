@@ -1,12 +1,12 @@
 {
-  "name": "web-reactions-verifier",
+  "name": "webemoji-verifier",
   "private": true,
   "version": "0.1.0",
   "license": "GPL-3.0-or-later",
   "author": "khasky",
   "description": "Standalone CLI verifier for Webemoji public counts and signed checkpoints",
   "keywords": [
-    "web-reactions",
+    "webemoji",
     "transparency-log",
     "verifier",
     "cli",
