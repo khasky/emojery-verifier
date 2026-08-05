@@ -78,7 +78,7 @@ The published signing key is pinned in `src/verify.mjs`, so `--pubkey` is option
 for the main deployment. The current pinned key is:
 
 ```text
-MZZMvWNdL8MXb0AzSvN3+XYnXeU126NWqfqyoZ1dLkU=
+XeLiQ5CMhsjLmnQbIWSwWHNjcJg01Zs0veQDiwluT6c=
 ```
 
 Pass `--pubkey` only to verify a different deployment or fork.

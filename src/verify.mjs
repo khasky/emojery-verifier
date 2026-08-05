@@ -71,7 +71,7 @@ import {
 import { runExternalOts, verifyDetachedOtsProof } from "./ots-bitcoin.mjs";
 
 // The published Webemoji log signing key (base64 raw Ed25519). Pinned so --pubkey is optional.
-const PINNED_PUBKEY_B64 = "MZZMvWNdL8MXb0AzSvN3+XYnXeU126NWqfqyoZ1dLkU=";
+const PINNED_PUBKEY_B64 = "XeLiQ5CMhsjLmnQbIWSwWHNjcJg01Zs0veQDiwluT6c=";
 
 const ENTRIES_PAGE = 1000;
 // Fixed shard size of the public entries/ shards (pinned in TRANSPARENCY.md;
