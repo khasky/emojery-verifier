@@ -70,7 +70,7 @@ import {
 } from "./transparency.mjs";
 import { runExternalOts, verifyDetachedOtsProof } from "./ots-bitcoin.mjs";
 
-// The published Web Reactions log signing key (base64 raw Ed25519). Pinned so --pubkey is optional.
+// The published Webemoji log signing key (base64 raw Ed25519). Pinned so --pubkey is optional.
 const PINNED_PUBKEY_B64 = "MZZMvWNdL8MXb0AzSvN3+XYnXeU126NWqfqyoZ1dLkU=";
 
 const ENTRIES_PAGE = 1000;
