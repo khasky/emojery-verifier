@@ -3,7 +3,7 @@
 // Standalone transparency-log verifier.
 //
 //   node src/verify.mjs --api https://api.webemoji.app \
-//     [--repo https://raw.githubusercontent.com/khasky/web-reactions-log/main] \
+//     [--repo https://raw.githubusercontent.com/khasky/webemoji-log/main] \
 //     [--entries api|repo] [--shard-size 10000] \
 //     [--pubkey <base64 raw Ed25519>] [--target github/1] [--limit 50] \
 //     [--wipe-grace-hours 48] [--no-rekor] [--ots] [--btc-api <Esplora base>] [--ots-external <bin>] [--json]

@@ -3,7 +3,7 @@
 A standalone, open-source tool that re-derives the Webemoji counters from the **public** log and checks them against the signed, externally-anchored checkpoint — so the totals are provable, not just promised. It talks only to the public API and the public log; it has no privileged access.
 
 This verifier is paired with the public data repository
-[`web-reactions-log`](https://github.com/khasky/web-reactions-log). That repository
+[`web-reactions-log`](https://github.com/khasky/webemoji-log). That repository
 holds the signed checkpoints and OpenTimestamps proofs; this repository holds the
 code that checks them.
 
@@ -18,8 +18,8 @@ pnpm install
 Fast check, without cloning:
 
 ```
-npx github:khasky/web-reactions-verifier --api https://api.webemoji.app \
-  --repo https://raw.githubusercontent.com/khasky/web-reactions-log/main \
+npx github:khasky/webemoji-verifier --api https://api.webemoji.app \
+  --repo https://raw.githubusercontent.com/khasky/webemoji-log/main \
   --target github/1
 ```
 
@@ -27,7 +27,7 @@ npx github:khasky/web-reactions-verifier --api https://api.webemoji.app \
 
 ```
 node src/verify.mjs --api https://api.webemoji.app \
-  --repo https://raw.githubusercontent.com/khasky/web-reactions-log/main \
+  --repo https://raw.githubusercontent.com/khasky/webemoji-log/main \
   --target github/1
 ```
 
@@ -35,7 +35,7 @@ Fully offline audit — no request ever reaches the operator's API; the checkpoi
 
 ```
 node src/verify.mjs --entries repo \
-  --repo https://raw.githubusercontent.com/khasky/web-reactions-log/main
+  --repo https://raw.githubusercontent.com/khasky/webemoji-log/main
 ```
 
 Example result:

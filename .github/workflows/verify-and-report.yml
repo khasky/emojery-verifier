@@ -40,10 +40,10 @@ jobs:
         include:
           - target: production
             api: https://api.webemoji.app
-            repo: https://raw.githubusercontent.com/khasky/web-reactions-log/main
+            repo: https://raw.githubusercontent.com/khasky/webemoji-log/main
           - target: staging
             api: https://api-staging.webemoji.app
-            repo: https://raw.githubusercontent.com/khasky/web-reactions-log-staging/main
+            repo: https://raw.githubusercontent.com/khasky/webemoji-log-staging/main
     environment: ${{ matrix.target }}
     concurrency:
       group: verify-and-report-${{ matrix.target }}

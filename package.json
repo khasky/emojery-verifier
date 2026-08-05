@@ -20,10 +20,10 @@
   "homepage": "https://webemoji.app",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/khasky/web-reactions-verifier.git"
+    "url": "git+https://github.com/khasky/webemoji-verifier.git"
   },
   "bugs": {
-    "url": "https://github.com/khasky/web-reactions-verifier/issues"
+    "url": "https://github.com/khasky/webemoji-verifier/issues"
   },
   "funding": [
     {
