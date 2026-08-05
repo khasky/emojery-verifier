@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Standalone transparency-log verifier.
 //
-//   node src/verify.mjs --api https://api.webreactions.app \
+//   node src/verify.mjs --api https://api.webemoji.app \
 //     [--repo https://raw.githubusercontent.com/khasky/web-reactions-log/main] \
 //     [--entries api|repo] [--shard-size 10000] \
 //     [--pubkey <base64 raw Ed25519>] [--target github/1] [--limit 50] \

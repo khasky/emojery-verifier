@@ -18,7 +18,7 @@ pnpm install
 Fast check, without cloning:
 
 ```
-npx github:khasky/web-reactions-verifier --api https://api.webreactions.app \
+npx github:khasky/web-reactions-verifier --api https://api.webemoji.app \
   --repo https://raw.githubusercontent.com/khasky/web-reactions-log/main \
   --target github/1
 ```
@@ -26,7 +26,7 @@ npx github:khasky/web-reactions-verifier --api https://api.webreactions.app \
 …or from a checkout:
 
 ```
-node src/verify.mjs --api https://api.webreactions.app \
+node src/verify.mjs --api https://api.webemoji.app \
   --repo https://raw.githubusercontent.com/khasky/web-reactions-log/main \
   --target github/1
 ```
@@ -182,7 +182,7 @@ By default `--btc-api` is `https://blockstream.info/api`; any Esplora-compatible
 
 ### Status reporting (`--json` + scheduled report)
 
-The verifier doubles as the **independent** check behind the public status page at `webreactions.app/status`. The workflow `.github/workflows/verify-and-report.yml` runs daily (and on demand), executes `node src/verify.mjs --json …` against the public API + log, and POSTs the verdict to the API's `POST /status/ingest` endpoint; the status page renders it as the "Independent verification" component.
+The verifier doubles as the **independent** check behind the public status page at `webemoji.app/status`. The workflow `.github/workflows/verify-and-report.yml` runs daily (and on demand), executes `node src/verify.mjs --json …` against the public API + log, and POSTs the verdict to the API's `POST /status/ingest` endpoint; the status page renders it as the "Independent verification" component.
 
 To enable it on a fork, set on this repo a **variable** `LOG_PUBKEY` (the published key) and a **secret** `STATUS_INGEST_KEY` (matching the API's secret). The job runs without `--ots` — OpenTimestamps matures over days, and the status page tracks the Bitcoin anchor separately — so a young log isn't reported as failing.
 
