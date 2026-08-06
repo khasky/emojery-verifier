@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Self-test for the checkpoint-archive replay primitive and the signed daily
-// stats file contract.
+// Self-test for the checkpoint-archive replay primitive and the per-day
+// aggregates derived from the public entries.
 //   node src/archive.selftest.mjs
 
-import * as ed from "@noble/ed25519";
-import { bytesToHex, dailyAggregates, merkleRootFromLeaves, merkleRootsAtSizes, sha256, statsCanonicalBytes, utf8, verifySignature } from "./transparency.mjs";
+import { bytesToHex, dailyAggregates, merkleRootFromLeaves, merkleRootsAtSizes, sha256, utf8 } from "./transparency.mjs";
 
 let failed = false;
 const DAY = 86_400_000;
@@ -33,24 +32,6 @@ const tampered = leaves.slice();
 tampered[2] = await sha256(utf8("evil"));
 const tamperedRoots = await merkleRootsAtSizes(tampered, [5]);
 check(bytesToHex(tamperedRoots.get(5)) !== bytesToHex(roots.get(5)), "a tampered leaf changes the prefix root");
-
-// --- signed daily stats contract ---------------------------------------------
-// Canonical bytes are the cross-impl contract with the backend signer — pin
-// them literally.
-const stats = { day: "2026-07-18", new_accounts: 5, votes: 42, unique_user_refs: 17, revokes: 3 };
-check(
-  new TextDecoder().decode(statsCanonicalBytes(stats)) === "web-reactions-stats-v1\nday:2026-07-18\nnew_accounts:5\nvotes:42\nunique_user_refs:17\nrevokes:3\n",
-  "stats canonical bytes match the pinned rendering",
-);
-check(
-  new TextDecoder().decode(statsCanonicalBytes({ ...stats, epoch_continuity: { from_epoch: 687, to_epoch: 688, accounts: 12 } })).endsWith("epoch_continuity:687:688:12\n"),
-  "epoch continuity appends its canonical line",
-);
-const priv = ed.utils.randomPrivateKey();
-const pubB64 = Buffer.from(await ed.getPublicKeyAsync(priv)).toString("base64");
-const sig = await ed.signAsync(statsCanonicalBytes(stats), priv);
-check(await verifySignature(pubB64, sig, statsCanonicalBytes(stats)), "stats signature roundtrip verifies");
-check(!(await verifySignature(pubB64, sig, statsCanonicalBytes({ ...stats, votes: 43 }))), "a changed aggregate breaks the signature");
 
 // --- dailyAggregates -----------------------------------------------------------
 const T = Date.parse("2026-07-18T10:00:00Z");

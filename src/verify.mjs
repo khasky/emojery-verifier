@@ -29,11 +29,7 @@
 //       monotone in tree_size, and each archived root equals the root recomputed
 //       from today's leaves at that tree_size — i.e. the whole published history
 //       lies on ONE append-only line (an internally-consistent rewrite fails here)
-//   3c. (if --repo) signed daily stats files (stats/<day>.json): signature over
-//       the canonical bytes, gap-free day series, and votes/unique_user_refs/
-//       revokes recomputed from the entries (new_accounts / epoch_continuity
-//       are operator commitments, shape-checked)
-//   3d. (default when --repo is set; --no-rekor to skip) the newest
+//   3c. (default when --repo is set; --no-rekor to skip) the newest
 //       rekor/<tree_size>.json sidecar resolves to a real Sigstore Rekor entry
 //       carrying exactly our signed STH bytes, signature, and public key. An
 //       unreachable Rekor downgrades to a skip; only disagreeing bytes FAIL.
@@ -63,7 +59,6 @@ import {
   merkleRootFromLeaves,
   merkleRootsAtSizes,
   sha256,
-  statsCanonicalBytes,
   sthBytes,
   verifySignature,
   verifySth,
@@ -312,89 +307,6 @@ async function verifyCheckpointArchive(repo, pubkey, cp, leaves) {
   }
   check(rootMismatch === 0, `every archived root replays from today's leaves (${sizes.length} checkpoint(s), ${rootMismatch} mismatch)`, "archive");
   return bySize;
-}
-
-// --- signed daily stats files (aggregate transparency) ---------------------
-
-const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
-const DAY_MS = 86_400_000;
-
-// Verify stats/<day>.json commitments: signature over the canonical bytes, gap-free day
-// series, and the three log-derivable aggregates recomputed from the entries (votes /
-// unique_user_refs / revokes). new_accounts and epoch_continuity are operator
-// commitments, shape-checked only (the latter needs the secret salt by design).
-async function verifyStatsFiles(repo, pubkey, cp, entries) {
-  let listed;
-  try {
-    listed = await listRepoDir(repo, "stats");
-  } catch (e) {
-    check(false, `stats listing: ${e.message}`, "stats");
-    return;
-  }
-  if (listed === null || listed.rateLimited) {
-    console.log(`SKIP  daily stats files (${listed === null ? "--repo is not a raw.githubusercontent.com base" : "GitHub API rate-limited; set GITHUB_TOKEN"})`);
-    record("stats", "skip");
-    return;
-  }
-  const days = (listed.names ?? [])
-    .filter((n) => n.endsWith(".json") && DAY_RE.test(n.slice(0, -5)))
-    .map((n) => n.slice(0, -5))
-    .sort();
-  if (days.length === 0) {
-    console.log("SKIP  daily stats files (none published yet)");
-    record("stats", "skip");
-    return;
-  }
-
-  const perDay = dailyAggregates(entries);
-  let bad = 0;
-  const flag = (msg) => {
-    bad++;
-    console.log(`   ${msg}`);
-  };
-  for (const day of days) {
-    let file;
-    try {
-      file = await getJson(`${repo}/stats/${day}.json`);
-    } catch (e) {
-      flag(`stats ${day}: fetch failed (${e.message})`);
-      continue;
-    }
-    const { signature, v, ...payload } = file;
-    if (v !== 1 || payload.day !== day) {
-      flag(`stats ${day}: malformed file (v=${v}, day=${payload.day})`);
-      continue;
-    }
-    for (const k of ["new_accounts", "votes", "unique_user_refs", "revokes"]) {
-      if (!Number.isInteger(payload[k]) || payload[k] < 0) flag(`stats ${day}: ${k} missing or negative`);
-    }
-    const ec = payload.epoch_continuity;
-    if (ec !== undefined && !(Number.isInteger(ec?.from_epoch) && Number.isInteger(ec?.to_epoch) && ec.to_epoch === ec.from_epoch + 1 && Number.isInteger(ec?.accounts) && ec.accounts >= 0)) {
-      flag(`stats ${day}: malformed epoch_continuity`);
-    }
-    if (typeof signature !== "string" || !(await verifySignature(pubkey, hexToBytes(signature), statsCanonicalBytes(payload)))) {
-      flag(`stats ${day}: signature does not verify`);
-      continue;
-    }
-    // Recompute the derivable aggregates for days the checkpoint fully covers.
-    if (Date.parse(`${day}T00:00:00Z`) + DAY_MS <= Number(cp.ts)) {
-      const a = perDay.get(day) ?? { votes: 0, refs: new Set(), revokes: 0 };
-      if (payload.votes !== a.votes) flag(`stats ${day}: claims votes=${payload.votes}, log has ${a.votes}`);
-      if (payload.unique_user_refs !== a.refs.size) flag(`stats ${day}: claims unique_user_refs=${payload.unique_user_refs}, log has ${a.refs.size}`);
-      if (payload.revokes !== a.revokes) flag(`stats ${day}: claims revokes=${payload.revokes}, log has ${a.revokes}`);
-    }
-  }
-  // Gap-free series (missed days are backfilled server-side, so an interior
-  // hole means a day's commitment was skipped) + the series keeps up with the
-  // checkpoint (2-day lag allowance covers the daily publish cadence).
-  for (let i = 1; i < days.length; i++) {
-    const prev = Date.parse(`${days[i - 1]}T00:00:00Z`);
-    const cur = Date.parse(`${days[i]}T00:00:00Z`);
-    for (let t = prev + DAY_MS; t < cur; t += DAY_MS) flag(`stats series gap: ${new Date(t).toISOString().slice(0, 10)} missing`);
-  }
-  const lastDay = Date.parse(`${days[days.length - 1]}T00:00:00Z`);
-  if (Number(cp.ts) - (lastDay + DAY_MS) > 2 * DAY_MS) flag(`stats series stale: newest is ${days[days.length - 1]}, checkpoint is ${new Date(Number(cp.ts)).toISOString()}`);
-  check(bad === 0, `signed daily stats match the log (${days.length} day(s), ${bad} violation(s))`, "stats");
 }
 
 // --- Sigstore Rekor cross-check (--rekor) ----------------------------------
@@ -651,15 +563,7 @@ async function main() {
     record("archive", "skip");
   }
 
-  // 3c. signed daily stats files: aggregate commitments vs the log itself.
-  if (repo) {
-    await verifyStatsFiles(repo, pubkey, cp, entries);
-  } else {
-    console.log("SKIP  daily stats files (no --repo)");
-    record("stats", "skip");
-  }
-
-  // 3d. (default; --no-rekor to skip) the newest checkpoint anchored to Sigstore Rekor
+  // 3c. (default; --no-rekor to skip) the newest checkpoint anchored to Sigstore Rekor
   //     really is there, carrying exactly our signed STH bytes. An unreachable Rekor
   //     downgrades to a skip inside verifyRekor; only disagreeing bytes are a hard fail.
   if (!rekorDisabled && repo) {

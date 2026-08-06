@@ -106,13 +106,12 @@ Pass `--pubkey` only to verify a different deployment or fork.
 3. (with `--repo`) the signed root matches the public GitHub anchor — catches a "split view" where the API shows you one history and everyone else another.
 4. Every log entry is refetched and the Merkle root is recomputed from scratch; it must equal the checkpoint's `root_hash`.
 5. (with `--repo`) the **checkpoint archive replays**: every checkpoint ever published to `checkpoints/*.ndjson` has a valid signature, no two published checkpoints disagree on one `tree_size`, timestamps are monotone, and every archived root equals the root recomputed from today's leaves at that `tree_size` — so the entire published history lies on ONE append-only line, and even an internally-consistent rewrite of the log fails.
-6. (with `--repo`) the **signed daily stats files** (`stats/<day>.json`) hold: the signature covers the canonical bytes, the day series is gap-free and keeps up with the checkpoint, and the log-derivable aggregates (`votes`, `unique_user_refs`, `revokes`) are recomputed from the entries and must match. `new_accounts` is the operator's irreversible public commitment (shape-checked), as is the monthly `epoch_continuity` count.
-7. The per-target counters are re-derived from the log (accounting for changes and removals); with `--target`, they must equal what the live API serves.
-8. The published revocation list matches the revocations actually present in the log.
-9. The log is internally consistent — every entry is well-formed and no count is ever driven impossibly negative.
-10. Account wipes are complete — revocations are whole-account, so once any entry of a pseudonym is revoked, every entry of that pseudonym must be revoked. A partially revoked pseudonym is flagged, after a 48-hour grace window for wipes still in flight (`--wipe-grace-hours`).
-11. (by default, with `--repo`; `--no-rekor` to skip) the newest Rekor sidecar resolves to a real Sigstore Rekor entry carrying exactly our signed checkpoint bytes, signature, and public key. An unreachable Rekor is a skip, not a fail.
-12. (with `--ots`) the matured OpenTimestamps proof anchors the signed root in a Bitcoin block.
+6. The per-target counters are re-derived from the log (accounting for changes and removals); with `--target`, they must equal what the live API serves.
+7. The published revocation list matches the revocations actually present in the log.
+8. The log is internally consistent — every entry is well-formed and no count is ever driven impossibly negative.
+9. Account wipes are complete — revocations are whole-account, so once any entry of a pseudonym is revoked, every entry of that pseudonym must be revoked. A partially revoked pseudonym is flagged, after a 48-hour grace window for wipes still in flight (`--wipe-grace-hours`).
+10. (by default, with `--repo`; `--no-rekor` to skip) the newest Rekor sidecar resolves to a real Sigstore Rekor entry carrying exactly our signed checkpoint bytes, signature, and public key. An unreachable Rekor is a skip, not a fail.
+11. (with `--ots`) the matured OpenTimestamps proof anchors the signed root in a Bitcoin block.
 
 ### Revocations and account deletion
 
@@ -196,7 +195,7 @@ You don't need the ingest secret to become an independent watcher: **fork this r
 pnpm selftest
 ```
 
-Runs `src/revoke.selftest.mjs`, `src/ots.selftest.mjs`, and `src/archive.selftest.mjs` — offline checks of the revocation/`op=4` counter-folding logic, the dependency-clean OTS verifier, the checkpoint-archive replay primitive, and the signed daily-stats contract (canonical bytes + signature) against synthetic fixtures (no network). Exit `0` = PASS.
+Runs `src/revoke.selftest.mjs`, `src/ots.selftest.mjs`, and `src/archive.selftest.mjs` — offline checks of the revocation/`op=4` counter-folding logic, the dependency-clean OTS verifier, the checkpoint-archive replay primitive, and the per-day aggregates derived from the entries, against synthetic fixtures (no network). Exit `0` = PASS.
 
 Example result:
 

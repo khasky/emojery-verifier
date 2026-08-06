@@ -141,21 +141,9 @@ export function sthBytes(treeSize, rootHash, ts) {
 export function verifySth(pubRawB64, sigBytes, sth) {
   return ed.verifyAsync(sigBytes, sthBytes(sth.treeSize, sth.rootHash, sth.ts), base64ToBytes(pubRawB64));
 }
-// Generic Ed25519 verification over arbitrary bytes (the daily stats files).
+// Generic Ed25519 verification over arbitrary bytes.
 export function verifySignature(pubRawB64, sigBytes, msgBytes) {
   return ed.verifyAsync(sigBytes, msgBytes, base64ToBytes(pubRawB64));
-}
-
-// Canonical signed bytes of a daily stats file — the fixed text rendering the
-// backend signs (kept in lockstep with the backend's stats signer). Signing a
-// text form, not the JSON bytes, keeps the signature independent of JSON key
-// order/whitespace.
-export function statsCanonicalBytes(s) {
-  let text = `web-reactions-stats-v1\nday:${s.day}\nnew_accounts:${s.new_accounts}\nvotes:${s.votes}\nunique_user_refs:${s.unique_user_refs}\nrevokes:${s.revokes}\n`;
-  if (s.epoch_continuity) {
-    text += `epoch_continuity:${s.epoch_continuity.from_epoch}:${s.epoch_continuity.to_epoch}:${s.epoch_continuity.accounts}\n`;
-  }
-  return utf8(text);
 }
 
 // Per-UTC-day aggregates derivable from the public entries: reactions (op
