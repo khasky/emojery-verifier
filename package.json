@@ -1,12 +1,12 @@
 {
-  "name": "webemoji-verifier",
+  "name": "emojery-verifier",
   "private": true,
   "version": "0.1.0",
   "license": "GPL-3.0-or-later",
   "author": "khasky",
-  "description": "Standalone CLI verifier for Webemoji public counts and signed checkpoints",
+  "description": "Standalone CLI verifier for Emojery public counts and signed checkpoints",
   "keywords": [
-    "webemoji",
+    "emojery",
     "transparency-log",
     "verifier",
     "cli",
@@ -17,13 +17,13 @@
     "checkpoint",
     "bitcoin"
   ],
-  "homepage": "https://webemoji.app",
+  "homepage": "https://emojery.app",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/khasky/webemoji-verifier.git"
+    "url": "git+https://github.com/khasky/emojery-verifier.git"
   },
   "bugs": {
-    "url": "https://github.com/khasky/webemoji-verifier/issues"
+    "url": "https://github.com/khasky/emojery-verifier/issues"
   },
   "funding": [
     {
@@ -48,7 +48,7 @@
     "@noble/ed25519": "^2.1.0"
   },
   "bin": {
-    "webemoji-verify": "src/verify.mjs"
+    "emojery-verify": "src/verify.mjs"
   },
   "files": [
     "src",

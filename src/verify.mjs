@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Standalone transparency-log verifier.
 //
-//   node src/verify.mjs --api https://api.webemoji.app \
-//     [--repo https://raw.githubusercontent.com/khasky/webemoji-log/main] \
+//   node src/verify.mjs --api https://api.emojery.app \
+//     [--repo https://raw.githubusercontent.com/khasky/emojery-log/main] \
 //     [--entries api|repo] [--shard-size 10000] \
 //     [--pubkey <base64 raw Ed25519>] [--target github/1] [--limit 50] \
 //     [--wipe-grace-hours 48] [--no-rekor] [--ots] [--btc-api <Esplora base>] [--ots-external <bin>] [--json]
@@ -65,7 +65,7 @@ import {
 } from "./transparency.mjs";
 import { runExternalOts, verifyDetachedOtsProof } from "./ots-bitcoin.mjs";
 
-// The published Webemoji log signing key (base64 raw Ed25519). Pinned so --pubkey is optional.
+// The published Emojery log signing key (base64 raw Ed25519). Pinned so --pubkey is optional.
 const PINNED_PUBKEY_B64 = "XeLiQ5CMhsjLmnQbIWSwWHNjcJg01Zs0veQDiwluT6c=";
 
 const ENTRIES_PAGE = 1000;

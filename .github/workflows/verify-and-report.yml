@@ -39,11 +39,11 @@ jobs:
       matrix:
         include:
           - target: production
-            api: https://api.webemoji.app
-            repo: https://raw.githubusercontent.com/khasky/webemoji-log/main
+            api: https://api.emojery.app
+            repo: https://raw.githubusercontent.com/khasky/emojery-log/main
           - target: staging
-            api: https://api-staging.webemoji.app
-            repo: https://raw.githubusercontent.com/khasky/webemoji-log-staging/main
+            api: https://api-staging.emojery.app
+            repo: https://raw.githubusercontent.com/khasky/emojery-log-staging/main
     environment: ${{ matrix.target }}
     concurrency:
       group: verify-and-report-${{ matrix.target }}
