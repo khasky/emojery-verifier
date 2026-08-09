@@ -2,10 +2,7 @@
 
 A standalone, open-source tool that re-derives the Emojery counters from the **public** log and checks them against the signed, externally-anchored checkpoint — so the totals are provable, not just promised. It talks only to the public API and the public log; it has no privileged access.
 
-This verifier is paired with the public data repository
-[`emojery-log`](https://github.com/khasky/emojery-log). That repository
-holds the signed checkpoints and OpenTimestamps proofs; this repository holds the
-code that checks them.
+This verifier is paired with the public data repository [`emojery-log`](https://github.com/khasky/emojery-log). That repository holds the signed checkpoints and OpenTimestamps proofs; this repository holds the code that checks them.
 
 ## Install
 
@@ -74,8 +71,7 @@ PASS  structural invariants hold (0 violation(s))
 PASS  account wipes are complete (0 violation(s); grace 48h)
 ```
 
-The published signing key is pinned in `src/verify.mjs`, so `--pubkey` is optional
-for the main deployment. The current pinned key is:
+The published signing key is pinned in `src/verify.mjs`, so `--pubkey` is optional for the main deployment. The current pinned key is:
 
 ```text
 XeLiQ5CMhsjLmnQbIWSwWHNjcJg01Zs0veQDiwluT6c=
@@ -83,7 +79,7 @@ XeLiQ5CMhsjLmnQbIWSwWHNjcJg01Zs0veQDiwluT6c=
 
 Pass `--pubkey` only to verify a different deployment or fork.
 
-- `--api` (required unless running the offline audit below): the public API base URL — serves `/log/*` and `/reactions/count`.
+- `--api` (required unless running the fully offline audit): the public API base URL — serves `/log/*` and `/reactions/count`.
 - `--repo` (optional): GitHub raw base of the public log; cross-checks the signed root against the published anchor and replays the full checkpoint archive.
 - `--entries api|repo` (optional, default `api`): where to read the raw leaves. `repo` reads the public `entries/<start>-<end>.ndjson` shards from `--repo`; combined with omitting `--api` that is a **fully offline audit** of a clone/mirror — the operator's API is never contacted (the live-counter and `/log/revocations` endpoint comparisons are skipped; the in-log revocation invariants still run).
 - `--shard-size N` (optional, default 10000): the fixed entries-shard size (matches the published layout; only needed if a deployment ever changes it).
@@ -113,39 +109,28 @@ Pass `--pubkey` only to verify a different deployment or fork.
 10. (by default, with `--repo`; `--no-rekor` to skip) the newest Rekor sidecar resolves to a real Sigstore Rekor entry carrying exactly our signed checkpoint bytes, signature, and public key. An unreachable Rekor is a skip, not a fail.
 11. (with `--ots`) the matured OpenTimestamps proof anchors the signed root in a Bitcoin block.
 
+Exit code `0` = PASS, `1` = FAIL. A failure means the published numbers don't match the log, or the log doesn't match its signed, anchored checkpoint — exactly what this is built to catch. It checks the **integrity** of the record; it does not, by itself, prove each reaction comes from a unique person — that is a separate concern.
+
 ### Revocations and account deletion
 
 The log records counter-changing events, not just final state:
 
 - `op=1` — a reaction was added.
-- `op=2` — a reaction was changed; the leaf records both the new reaction and
-  the previous one.
+- `op=2` — a reaction was changed; the leaf records both the new reaction and the previous one.
 - `op=3` — a reaction was removed by the user.
-- `op=4` — a revocation tombstone: a later public leaf that reverses an earlier
-  `op=1`, `op=2`, or `op=3` leaf.
+- `op=4` — a revocation tombstone: a later public leaf that reverses an earlier `op=1`, `op=2`, or `op=3` leaf.
 
-So a normal user "unreact" is `op=3`, not a tombstone. Tombstones are for
-append-only corrections. If an account is erased, or if a counted reaction has
-to be reversed, Emojery does not edit or delete the original log leaf. It
-appends an `op=4` revocation leaf instead:
+So a normal user "unreact" is `op=3`, not a tombstone. Tombstones are for append-only corrections. If an account is erased, or if a counted reaction has to be reversed, Emojery does not edit or delete the original log leaf. It appends an `op=4` revocation leaf instead:
 
 - `revoke_seq` points at the original `op=1/2/3` leaf being reversed.
-- `reason_code` is a public machine-readable reason, such as `erasure_self`,
-  `erasure_admin`, or an abuse-correction label.
-- `evidence_hash` may pin a published evidence report; it is `null` for routine
-  account erasure.
+- `reason_code` is a public machine-readable reason, such as `erasure_self`, `erasure_admin`, or an abuse-correction label.
+- `evidence_hash` may pin a published evidence report; it is `null` for routine account erasure.
 
-The verifier resolves each `revoke_seq` to the original leaf, applies the
-inverse effect while folding counters, checks that revokes are not dangling,
-forward, self-referential, or duplicated, and confirms that
-`GET /log/revocations` matches the `op=4` leaves actually present in the
-anchored log.
+The verifier resolves each `revoke_seq` to the original leaf, applies the inverse effect while folding counters, checks that revokes are not dangling, forward, self-referential, or duplicated, and confirms that `GET /log/revocations` matches the `op=4` leaves actually present in the anchored log.
 
 #### Reading the revocation feed yourself
 
-`GET /log/revocations` has three forms, and **every one of them answers
-`has_more`** — a page that had to stop short says so, so a partial answer can
-never be mistaken for the whole list:
+`GET /log/revocations` has three forms, and **every one of them answers `has_more`** — a page that had to stop short says so, so a partial answer can never be mistaken for the whole list:
 
 | Request | Returns | `has_more` means | `next_from` |
 | --- | --- | --- | --- |
@@ -155,21 +140,9 @@ never be mistaken for the whole list:
 
 `revocations` is always ascending by `seq`.
 
-This verifier reads the range form and pages it itself, so it always sees the
-whole track. If you write your own auditor, page it the same way: the bare form
-is a browsable "what happened lately" view, not the full history, and stopping
-at its first response undercounts a log with more than 1000 tombstones.
+This verifier reads the range form and pages it itself, so it always sees the whole track. If you write your own auditor, page it the same way: the bare form is a browsable "what happened lately" view, not the full history, and stopping at its first response undercounts a log with more than 1000 tombstones.
 
-Revocations are whole-account. There is no per-vote reversal: erasing or
-deactivating an account revokes every entry that account wrote. The verifier
-enforces this as its account-wipe completeness check — if any entry of a
-pseudonym is cited by a revocation, all of that pseudonym's entries must be,
-so a single inconvenient vote cannot be quietly reversed under an
-account-operation label. Pseudonyms rotate per epoch, so completeness is
-checked per pseudonym; linking pseudonyms across epochs is impossible by
-design, as a privacy property of the log.
-
-Exit code `0` = PASS, `1` = FAIL. A failure means the published numbers don't match the log, or the log doesn't match its signed, anchored checkpoint — exactly what this is built to catch. It checks the **integrity** of the record; it does not, by itself, prove each reaction comes from a unique person — that is a separate concern.
+Revocations are whole-account. There is no per-vote reversal: erasing or deactivating an account revokes every entry that account wrote. The verifier enforces this as its account-wipe completeness check — if any entry of a pseudonym is cited by a revocation, all of that pseudonym's entries must be, so a single inconvenient vote cannot be quietly reversed under an account-operation label. Pseudonyms rotate per epoch, so completeness is checked per pseudonym; linking pseudonyms across epochs is impossible by design, as a privacy property of the log.
 
 ### `--ots`: OpenTimestamps → Bitcoin deep audit
 
@@ -187,7 +160,7 @@ To enable it on a fork, set on this repo a **variable** `LOG_PUBKEY` (the publis
 
 ### Fork and audit
 
-You don't need the ingest secret to become an independent watcher: **fork this repository, enable Actions on the fork, and set the `LOG_PUBKEY` variable** — your fork then runs the full verification daily on infrastructure the operator doesn't control, and the run history on your fork is your own public audit trail (the report step simply skips without `STATUS_INGEST_KEY`). The more independent forks watching, the less anyone has to take the operator's word for anything.
+You don't need the ingest secret to become an independent watcher: **fork this repository, enable Actions on the fork, and set the `LOG_PUBKEY` variable** — your fork then runs the full verification daily on infrastructure the operator doesn't control, and the run history on your fork is your own public audit trail (the report step skips without `STATUS_INGEST_KEY`). The more independent forks watching, the less anyone has to take the operator's word for anything.
 
 ## Self-test
 
