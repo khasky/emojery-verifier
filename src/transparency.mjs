@@ -147,8 +147,7 @@ export function verifySignature(pubRawB64, sigBytes, msgBytes) {
 }
 
 // Per-UTC-day aggregates derivable from the public entries: reactions (op
-// 1/2/3), distinct pseudonyms among them, and revocations (op=4). Used by the
-// stats-file cross-check and the --stats report.
+// 1/2/3), distinct pseudonyms among them, and revocations (op=4). Feeds --stats.
 export function dailyAggregates(entries) {
   const perDay = new Map(); // YYYY-MM-DD -> { votes, refs:Set, revokes }
   const dayOf = (ts) => new Date(Number(ts)).toISOString().slice(0, 10);
@@ -176,7 +175,7 @@ export function counterKey(site, target, reaction) {
   return `${site}\x00${target}\x00${reaction}`;
 }
 
-// log → counters fold (mirrors applyVote math, including op=4 revoke reversal).
+// log → counters fold (mirrors the served counter math, including op=4 revoke reversal).
 export function foldCounters(entries) {
   const counts = new Map();
   const bump = (site, target, reaction, delta) => {
@@ -221,13 +220,16 @@ export function foldCounters(entries) {
 //
 // Returns an array of human-readable violation strings (empty = all hold).
 //
-// Three independent checks:
+// Five independent checks:
 //   A. Per-leaf op/field validity.
 //   B. A per-author state machine — no double-add, and a stated previous reaction
 //      must match the known current one. A switch/remove may legitimately be the
 //      first event seen for an author, so that alone is not a violation.
 //   C. Global non-negativity of the per-(site, target, reaction) count at every
 //      prefix — an honest log never drives a reaction below zero.
+//   D. Every revoke cites an existing EARLIER op∈{1,2,3} leaf (no dangling,
+//      forward, or self reference).
+//   E. No leaf is revoked twice.
 export function checkStructuralInvariants(entries) {
   const violations = [];
   const state = new Map(); // `${user_ref}\x00${site}\x00${target}` -> current reaction | null

@@ -1,6 +1,6 @@
-// Minimal, dependency-free OpenTimestamps proof handling, kept in lockstep with
-// the backend's OTS codec; the public verifier must not import from the backend
-// at runtime.
+// Minimal, dependency-free OpenTimestamps proof handling — deliberately a standalone
+// copy of the operator's codec rather than a shared import, so the verifier depends on
+// nothing of theirs. The two must stay byte-for-byte in lockstep.
 //
 // Wire format (matches python-opentimestamps):
 //   - varuint: LEB128 unsigned (used for lengths and the block height)
@@ -267,7 +267,6 @@ export function reconstructPending(responses) {
   return root;
 }
 
-// Convenience for callers holding hex.
 export function digestFromHex(hexStr) {
   return hexToBytes(hexStr);
 }

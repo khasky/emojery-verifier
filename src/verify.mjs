@@ -189,7 +189,6 @@ async function verifyOts(repo, pubkey, btcApi, otsExternal) {
 
 // --- checkpoint-archive replay (check 3b) ---------------------------------
 
-// Collect every STH ever published to checkpoints/*.ndjson (+ latest.json).
 // Directory listing needs the GitHub contents API, so the repo slug is derived
 // from the raw.githubusercontent.com base; a non-GitHub --repo skips 3b.
 function githubSlugFromRawBase(repo) {
@@ -214,6 +213,8 @@ async function listRepoDir(repo, dir) {
   return { names: (Array.isArray(listing) ? listing : []).map((f) => f.name).filter((n) => typeof n === "string") };
 }
 
+// Collect every STH ever published to the checkpoints/*.ndjson shards. Only shards
+// are merged; checkpoints/latest.json is the live anchor, read separately in check 2.
 async function fetchCheckpointArchive(repo) {
   const listed = await listRepoDir(repo, "checkpoints");
   if (listed === null || listed.rateLimited) return listed;
@@ -309,7 +310,7 @@ async function verifyCheckpointArchive(repo, pubkey, cp, leaves) {
   return bySize;
 }
 
-// --- Sigstore Rekor cross-check (--rekor) ----------------------------------
+// --- Sigstore Rekor cross-check (default; --no-rekor to skip) ---------------
 
 // Confirm the newest rekor/<tree_size>.json sidecar points at a real Rekor
 // entry carrying exactly our signed STH bytes — i.e. an independently operated
