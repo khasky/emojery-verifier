@@ -89,7 +89,20 @@ jobs:
       - name: Report to /status/ingest
         if: ${{ env.STATUS_INGEST_KEY != '' }}
         run: |
-          curl -fsS -X POST "$API/status/ingest" \
-            -H "x-status-key: $STATUS_INGEST_KEY" \
+          # Whitespace-strip the secret: a value pasted with a trailing newline or
+          # space is sent verbatim and can never match the Worker's, and the 403 it
+          # earns is indistinguishable from a genuinely wrong key.
+          key="$(printf '%s' "$STATUS_INGEST_KEY" | tr -d '[:space:]')"
+          # -f would swallow the body; the Worker's error string is the whole
+          # diagnosis (forbidden = key mismatch, status_ingest_disabled = the Worker
+          # has no STATUS_INGEST_KEY), and it carries nothing secret.
+          code=$(curl -sS -o response.json -w '%{http_code}' -X POST "$API/status/ingest" \
+            -H "x-status-key: $key" \
             -H "content-type: application/json" \
-            --data @result.json
+            --data @result.json)
+          body=$(cat response.json)
+          echo "ingest HTTP $code: $body"
+          if [ "$code" != 200 ]; then
+            echo "::error::POST $API/status/ingest failed (HTTP $code: $body). If forbidden, this environment's STATUS_INGEST_KEY secret no longer matches the Worker's — rotate both together."
+            exit 1
+          fi
