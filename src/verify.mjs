@@ -5,14 +5,14 @@
 //   node src/verify.mjs --api https://api.emojery.app \
 //     [--repo https://raw.githubusercontent.com/khasky/emojery-log/main] \
 //     [--entries api|repo] [--shard-size 10000] \
-//     [--pubkey <base64 raw Ed25519>] [--target github/1] [--limit 50] \
+//     [--pubkey <base64 raw Ed25519>] \
 //     [--wipe-grace-hours 48] [--no-rekor] [--ots] [--btc-api <Esplora base>] [--ots-external <bin>] [--json]
 //
 // --entries repo reads the raw leaves from the log repo's public
 // entries/<start>-<end>.ndjson shards instead of the API; combined with --repo
 // (and no --api) that is a FULL OFFLINE audit of a clone/mirror — the operator's
-// API is not contacted at all (live-counter and /log/revocations endpoint
-// comparisons are then skipped; the in-log revoke invariants still run).
+// API is not contacted at all (the /log/revocations endpoint comparison is then
+// skipped; the in-log revoke invariants still run).
 //
 // --json prints a single machine-readable summary on stdout (result + per-check
 // pass/fail/skip + tree_size) instead of the human report — used by the status-page
@@ -33,7 +33,8 @@
 //       rekor/<tree_size>.json sidecar resolves to a real Sigstore Rekor entry
 //       carrying exactly our signed STH bytes, signature, and public key. An
 //       unreachable Rekor downgrades to a skip; only disagreeing bytes FAIL.
-//   4. counters re-derived; (if --target) compared to live /reactions/count
+//   4. counters re-derived from the verified leaves (revoke reversal included)
+//      and reported — the totals a third party can publish independently
 //   5. structural consistency of the log (well-formed entries, no impossible
 //      negative counts) + /log/revocations matches the log + account-wipe
 //      completeness (a pseudonym partially revoked is flagged; --wipe-grace-hours)
@@ -51,7 +52,6 @@ import {
   bytesToHex,
   checkStructuralInvariants,
   checkWipeCompleteness,
-  counterKey,
   dailyAggregates,
   foldCounters,
   hexToBytes,
@@ -443,8 +443,6 @@ async function main() {
   const api = arg("--api");
   const repo = arg("--repo");
   const pubkey = arg("--pubkey") || PINNED_PUBKEY_B64;
-  const target = arg("--target");
-  const limit = arg("--limit") || "50";
   const wipeGraceHours = Number(arg("--wipe-grace-hours") ?? "48");
   const ots = process.argv.includes("--ots");
   const btcApi = arg("--btc-api");
@@ -472,7 +470,7 @@ async function main() {
   // then the checkpoint comes from the repo's latest.json and every API-only
   // comparison is skipped.
   if (!api && !(entriesMode === "repo" && repo)) {
-    console.error("usage: node src/verify.mjs --api <url> [--repo <raw base>] [--entries api|repo] [--shard-size <n>] [--pubkey <b64>] [--target site/id] [--wipe-grace-hours <n>] [--max-checkpoint-age-hours <n>] [--stats] [--no-rekor] [--ots] [--btc-api <url>] [--ots-external <bin>] [--json]");
+    console.error("usage: node src/verify.mjs --api <url> [--repo <raw base>] [--entries api|repo] [--shard-size <n>] [--pubkey <b64>] [--wipe-grace-hours <n>] [--max-checkpoint-age-hours <n>] [--stats] [--no-rekor] [--ots] [--btc-api <url>] [--ots-external <bin>] [--json]");
     process.exit(2);
   }
   if (entriesMode === "repo" && !repo) {
@@ -585,36 +583,15 @@ async function main() {
     }
   }
 
-  // 4. fold + optional live counter comparison
+  // 4. fold. Every counter Emojery publishes is re-derived here from leaves this
+  // run already verified against the signed root, so an auditor can state the
+  // totals themselves instead of quoting ours. There is deliberately no
+  // comparison against the live API: /reactions/count belongs to the operator's
+  // extension-only surface (it answers 403 to anyone else), and a verifier that
+  // forged the client headers to read it would document a bypass in the one tool
+  // whose entire value is being independently trustworthy.
   const counts = foldCounters(entries);
   console.log(`folded ${counts.size} (site,target,reaction) counters from ${entries.length} events`);
-  if (target && !api) {
-    console.log("SKIP  live counter comparison (offline audit, no --api)");
-    record("counters", "skip");
-  } else if (target) {
-    const [site, ...rest] = target.split("/");
-    const targetId = rest.join("/");
-    const r = await getJson(`${api}/reactions/count?t=${encodeURIComponent(`${site}/${targetId}`)}&limit=${limit}`);
-    const live = r.counts ?? {};
-    let mismatch = 0;
-    const reactions = new Set([
-      ...Object.keys(live),
-      ...[...counts.keys()]
-        .filter((k) => k.startsWith(`${site}\x00${targetId}\x00`))
-        .map((k) => k.split("\x00")[2]),
-    ]);
-    for (const r of reactions) {
-      const folded = counts.get(counterKey(site, targetId, r)) ?? 0;
-      const served = live[r] ?? 0;
-      if (folded !== served) {
-        mismatch++;
-        console.log(`   mismatch ${r}: folded=${folded} served=${served}`);
-      }
-    }
-    check(mismatch === 0, `live /reactions/count matches the fold for ${target}`, "counters");
-  } else {
-    record("counters", "skip");
-  }
 
   // 4b. revocation audit surface: the public /log/revocations list must equal the
   //     set of op=4 tombstones we folded from the log.

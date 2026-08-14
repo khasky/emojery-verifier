@@ -16,16 +16,14 @@ Fast check, without cloning:
 
 ```
 npx github:khasky/emojery-verifier --api https://api.emojery.app \
-  --repo https://raw.githubusercontent.com/khasky/emojery-log/main \
-  --target github/1
+  --repo https://raw.githubusercontent.com/khasky/emojery-log/main
 ```
 
 …or from a checkout:
 
 ```
 node src/verify.mjs --api https://api.emojery.app \
-  --repo https://raw.githubusercontent.com/khasky/emojery-log/main \
-  --target github/1
+  --repo https://raw.githubusercontent.com/khasky/emojery-log/main
 ```
 
 Fully offline audit — no request ever reaches the operator's API; the checkpoint comes from the log repo's `checkpoints/latest.json` and the raw leaves from its public `entries/` shards:
@@ -79,13 +77,11 @@ XeLiQ5CMhsjLmnQbIWSwWHNjcJg01Zs0veQDiwluT6c=
 
 Pass `--pubkey` only to verify a different deployment or fork.
 
-- `--api` (required unless running the fully offline audit): the public API base URL — serves `/log/*` and `/reactions/count`.
+- `--api` (required unless running the fully offline audit): the public API base URL — serves `/log/*`.
 - `--repo` (optional): GitHub raw base of the public log; cross-checks the signed root against the published anchor and replays the full checkpoint archive.
-- `--entries api|repo` (optional, default `api`): where to read the raw leaves. `repo` reads the public `entries/<start>-<end>.ndjson` shards from `--repo`; combined with omitting `--api` that is a **fully offline audit** of a clone/mirror — the operator's API is never contacted (the live-counter and `/log/revocations` endpoint comparisons are skipped; the in-log revocation invariants still run).
+- `--entries api|repo` (optional, default `api`): where to read the raw leaves. `repo` reads the public `entries/<start>-<end>.ndjson` shards from `--repo`; combined with omitting `--api` that is a **fully offline audit** of a clone/mirror — the operator's API is never contacted (the `/log/revocations` endpoint comparison is skipped; the in-log revocation invariants still run).
 - `--shard-size N` (optional, default 10000): the fixed entries-shard size (matches the published layout; only needed if a deployment ever changes it).
 - `--pubkey` (optional): the published Ed25519 public key (base64 raw). Defaults to the key pinned in `src/verify.mjs`.
-- `--target site/id` (optional): also compare the re-derived count to the live `/reactions/count` for one target.
-- `--limit N` (optional, default 50): cap on the reactions compared in the `--target` check.
 - `--wipe-grace-hours N` (optional, default 48): grace window for the account-wipe completeness check — a pseudonym whose newest revocation is younger than this (relative to the checkpoint) counts as a wipe still in flight. A policy knob, not a proof parameter; auditors of a quiescent log may tighten it to `0`.
 - `--max-checkpoint-age-hours N` (optional, default 168, `0` disables): flag a checkpoint older than this — a frozen snapshot passing every other check is still a stale view. A quiet log ages legitimately (checkpoints only advance on new votes), hence the generous default.
 - `--stats` (optional): print a per-day CSV (reactions, distinct pseudonymous authors, revocations) derived from the entries alone.
@@ -102,7 +98,7 @@ Pass `--pubkey` only to verify a different deployment or fork.
 3. (with `--repo`) the signed root matches the public GitHub anchor — catches a "split view" where the API shows you one history and everyone else another.
 4. Every log entry is refetched and the Merkle root is recomputed from scratch; it must equal the checkpoint's `root_hash`.
 5. (with `--repo`) the **checkpoint archive replays**: every checkpoint ever published to `checkpoints/*.ndjson` has a valid signature, no two published checkpoints disagree on one `tree_size`, timestamps are monotone, and every archived root equals the root recomputed from today's leaves at that `tree_size` — so the entire published history lies on ONE append-only line, and even an internally-consistent rewrite of the log fails.
-6. The per-target counters are re-derived from the log (accounting for changes and removals); with `--target`, they must equal what the live API serves.
+6. The per-target counters are re-derived from the log (accounting for changes and removals), so the totals can be stated from the public log alone instead of taken on the operator's word.
 7. The published revocation list matches the revocations actually present in the log.
 8. The log is internally consistent — every entry is well-formed and no count is ever driven impossibly negative.
 9. Account wipes are complete — revocations are whole-account, so once any entry of a pseudonym is revoked, every entry of that pseudonym must be revoked. A partially revoked pseudonym is flagged, after a 48-hour grace window for wipes still in flight (`--wipe-grace-hours`).
