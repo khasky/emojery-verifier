@@ -1,0 +1,142 @@
+# Scheduled independent verification → status surface, for BOTH environments.
+#
+# A matrix job runs the real verifier against each environment's public API + log and
+# POSTs its PASS/FAIL verdict to that environment's status-ingest endpoint. This
+# is the out-of-band, independent check the backend cannot perform on its own data.
+#
+# Required GitHub settings on THIS repo — per environment
+# (Settings → Environments → production / staging → add each):
+#   - Variable  LOG_PUBKEY        — that env's published Ed25519 public key (base64). Public.
+#   - Secret    STATUS_INGEST_KEY — matches that env's backend STATUS_INGEST_KEY secret.
+# The prod and staging keys DIFFER (each env signs its own log), so they MUST live on
+# the environments, not as a single repo-level value. Leaving them repo-level (or as a
+# repo `Secret` for LOG_PUBKEY, which the workflow reads via `vars.`) resolves to empty.
+#
+# Note: --ots is intentionally omitted. OpenTimestamps matures over hours–days, so a
+# young log has no Bitcoin proof yet and --ots would report FAIL; the Bitcoin component
+# is derived separately (and leniently) by the backend. This job covers the core
+# tamper-evidence checks (signature, Merkle re-fold, revocations, invariants)
+# plus the Sigstore Rekor cross-check, which now runs by default (an unreachable Rekor
+# downgrades to a skip, so a third-party outage can't flip this verdict to FAIL).
+
+name: verify-and-report
+
+on:
+  schedule:
+    - cron: "0 4 * * *" # daily at 04:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false # a staging failure must not cancel the production check
+      matrix:
+        include:
+          - target: production
+            api: https://api.emojery.app
+            repo: https://raw.githubusercontent.com/khasky/emojery-log/main
+          - target: staging
+            api: https://api-staging.emojery.app
+            repo: https://raw.githubusercontent.com/khasky/emojery-log-staging/main
+    environment: ${{ matrix.target }}
+    concurrency:
+      group: verify-and-report-${{ matrix.target }}
+      cancel-in-progress: false
+    env:
+      API: ${{ matrix.api }}
+      REPO: ${{ matrix.repo }}
+      LOG_PUBKEY: ${{ vars.LOG_PUBKEY }}
+      STATUS_INGEST_KEY: ${{ secrets.STATUS_INGEST_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      # Reproducible install: honor the committed lockfile, and skip dependency
+      # lifecycle scripts (the only dep is @noble/ed25519 — pure JS, no build), so a
+      # compromised transitive postinstall can't run with the job's secrets in scope.
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+
+      # A missing key would reach the verifier as `--pubkey ""`, which it now refuses;
+      # catching it here says WHICH setting is missing instead of leaving that to be
+      # inferred from an argument error.
+      - name: Check the environment carries LOG_PUBKEY
+        run: |
+          if [ -z "$LOG_PUBKEY" ]; then
+            echo "::error::LOG_PUBKEY is empty for the '${{ matrix.target }}' environment. It is an ENVIRONMENT variable (Settings → Environments → ${{ matrix.target }} → Variables), not a repository one, and not a secret — the workflow reads it via vars."
+            exit 1
+          fi
+
+      - name: Run verifier (--json)
+        env:
+          # Lifts the unauthenticated api.github.com quota for the checkpoint-archive
+          # listing (shared runner IPs are routinely rate-limited; without a token the
+          # archive check would downgrade to a skip instead of running).
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          # --entries repo: the leaves come from the log repo's 10k-leaf shards, not
+          # from 1000-leaf API pages. On a large log that is the difference between
+          # ~100 unmetered raw.githubusercontent.com reads and a thousand requests
+          # against the API's per-IP /log/* limit from a shared runner IP. --api stays
+          # on, so the checkpoint, the revocation comparison and the 3d entries
+          # cross-check still exercise the live endpoints.
+          node src/verify.mjs --json --api "$API" --repo "$REPO" --entries repo --pubkey "$LOG_PUBKEY" > result.json
+          code=$?
+          set -e
+          # If the verifier crashed before emitting JSON, synthesize an explicit fail so
+          # the status surface reflects the failure instead of going stale.
+          if ! node -e "JSON.parse(require('fs').readFileSync('result.json','utf8'))" 2>/dev/null; then
+            printf '{"result":"fail","checks":{"run":"fail"},"ts":%s000}\n' "$(date +%s)" > result.json
+          fi
+          echo "verifier exit code: $code"
+          cat result.json
+          # The verdict is carried forward instead of failing here: the whole point of
+          # this job is to REPORT a failure, and a failed step would skip the ingest
+          # below. The final step turns it into the job's status, so a fork with no
+          # ingest secret still sees a red run — a green-whatever-happens audit trail
+          # is worse than none, because it reads as "checked, fine".
+          echo "VERIFY_RESULT=$(node -e "process.stdout.write(String(JSON.parse(require('fs').readFileSync('result.json','utf8')).result ?? 'fail'))")" >> "$GITHUB_ENV"
+          echo "VERIFY_EXIT=$code" >> "$GITHUB_ENV"
+
+      - name: Report to /status/ingest
+        if: ${{ env.STATUS_INGEST_KEY != '' }}
+        run: |
+          # Whitespace-strip the secret: a value pasted with a trailing newline or
+          # space is sent verbatim and can never match the backend's, and the 403 it
+          # earns is indistinguishable from a genuinely wrong key.
+          key="$(printf '%s' "$STATUS_INGEST_KEY" | tr -d '[:space:]')"
+          # -f would swallow the body; the API's error string is the whole
+          # diagnosis (forbidden = key mismatch, status_ingest_disabled = ingest
+          # is not enabled on that environment), and it carries nothing secret.
+          code=$(curl -sS -o response.json -w '%{http_code}' -X POST "$API/status/ingest" \
+            -H "x-status-key: $key" \
+            -H "content-type: application/json" \
+            --data @result.json)
+          body=$(cat response.json)
+          echo "ingest HTTP $code: $body"
+          if [ "$code" != 200 ]; then
+            echo "::error::POST $API/status/ingest failed (HTTP $code: $body). If forbidden, this environment's STATUS_INGEST_KEY secret no longer matches the backend's — rotate both together."
+            exit 1
+          fi
+
+      # Runs even when the ingest step failed, so the verdict is never lost behind a
+      # reporting problem.
+      - name: Fail the job when the log did not verify
+        if: ${{ always() }}
+        run: |
+          echo "verdict: ${VERIFY_RESULT:-missing} (verifier exit ${VERIFY_EXIT:-?})"
+          if [ "${VERIFY_RESULT:-}" != "pass" ]; then
+            echo "::error::${{ matrix.target }} did not verify (result=${VERIFY_RESULT:-missing}). Read result.json in the step above: each check is pass/fail/skip."
+            exit 1
+          fi
