@@ -1,0 +1,65 @@
+{
+  "name": "emojery-verifier",
+  "private": true,
+  "version": "0.1.0",
+  "license": "GPL-3.0-or-later",
+  "author": {
+    "name": "Khasky",
+    "url": "https://github.com/khasky"
+  },
+  "description": "Standalone CLI verifier for Emojery public counts and signed checkpoints",
+  "keywords": [
+    "emojery",
+    "transparency-log",
+    "verifier",
+    "cli",
+    "merkle",
+    "merkle-tree",
+    "ed25519",
+    "opentimestamps",
+    "checkpoint",
+    "bitcoin"
+  ],
+  "homepage": "https://emojery.app",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/khasky/emojery-verifier.git"
+  },
+  "bugs": {
+    "url": "https://github.com/khasky/emojery-verifier/issues"
+  },
+  "funding": [
+    {
+      "type": "github",
+      "url": "https://github.com/sponsors/khasky"
+    },
+    {
+      "type": "patreon",
+      "url": "https://www.patreon.com/khasky"
+    },
+    {
+      "type": "ko-fi",
+      "url": "https://ko-fi.com/khasky"
+    }
+  ],
+  "type": "module",
+  "packageManager": "pnpm@11.21.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@noble/ed25519": "^2.1.0"
+  },
+  "bin": {
+    "emojery-verify": "src/verify.mjs"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "verify": "node src/verify.mjs",
+    "selftest": "node src/revoke.selftest.mjs && node src/ots.selftest.mjs && node src/archive.selftest.mjs && node src/revocations.selftest.mjs"
+  }
+}
