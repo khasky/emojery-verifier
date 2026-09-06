@@ -66,13 +66,21 @@ const revoke = (seq) => ({ seq: String(seq), ts: 1, revoke_seq: "1", reason_code
 
 // --- 3. a truncated bare feed falls back to the full range walk --------------
 {
+  // Routed on the PATH, not just on the query: the bare feed and the range walk are
+  // two endpoints, and a walk that asked the wrong one would otherwise still pass
+  // here while 404ing against a real deployment.
   const calls = stubFetch((u) => {
-    if (u.search === "") return { body: { tree_size: "2500", revocations: [revoke(2400)], has_more: true, next_from: null } };
+    if (u.pathname === "/log/revocations") return { body: { tree_size: "2500", revocations: [revoke(2400)], has_more: true, next_from: null } };
+    if (u.pathname !== "/log/revocations/range") return { status: 404, body: { error: "not found" } };
     const from = Number(u.searchParams.get("from"));
     return { body: { tree_size: "2500", revocations: [revoke(from)], has_more: false, next_from: null } };
   });
   const revs = await fetchRevocations(API, 2500);
   const ranges = calls.filter((c) => c.includes("from="));
+  check(
+    ranges.every((c) => c.startsWith("/log/revocations/range?")),
+    `the range walk asks /log/revocations/range (${[...new Set(ranges.map((c) => c.split("?")[0]))].join(", ")})`,
+  );
   check(ranges.length === 3, `has_more walks the whole range: ceil(2500/1000) = 3 pages (made ${ranges.length})`);
   check(ranges[0].endsWith("from=1&to=1000") && ranges[2].endsWith("from=2001&to=2500"), `range pages are 1000 wide and clamped to tree_size (${ranges.join(" ")})`);
   check(revs.map((r) => r.seq).join(",") === "1,1001,2001", `the walk keeps every page's rows (got ${revs.map((r) => r.seq).join(",")})`);
@@ -120,7 +128,7 @@ const revoke = (seq) => ({ seq: String(seq), ts: 1, revoke_seq: "1", reason_code
   const calls = stubFetch(() => ({ status: 400, body: { error: "bad_range" } }));
   let threw = false;
   try {
-    await getJson(`${API}/log/revocations?from=5&to=1`);
+    await getJson(`${API}/log/revocations/range?from=5&to=1`);
   } catch {
     threw = true;
   }

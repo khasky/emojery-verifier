@@ -704,7 +704,7 @@ export async function fetchRevocations(api, treeSize) {
   const out = [];
   for (let from = 1; from <= treeSize; from += ENTRIES_PAGE) {
     const to = Math.min(from + ENTRIES_PAGE - 1, treeSize);
-    const page = await getJson(`${api}/log/revocations?from=${from}&to=${to}`);
+    const page = await getJson(`${api}/log/revocations/range?from=${from}&to=${to}`);
     out.push(...(page.revocations ?? []));
   }
   return out;

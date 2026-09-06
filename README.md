@@ -143,17 +143,19 @@ The verifier resolves each `revoke_seq` to the original leaf, applies the invers
 
 #### Reading the revocation feed yourself
 
-`GET /log/revocations` has three forms, and **every one of them answers `has_more`** — a page that had to stop short says so, so a partial answer can never be mistaken for the whole list:
+The revoke track has three read paths, and **every one of them answers `has_more`** — a page that had to stop short says so, so a partial answer can never be mistaken for the whole list:
 
 | Request | Returns | `has_more` means | `next_from` |
 | --- | --- | --- | --- |
-| `?from=&to=` | the `op=4` leaves in that `seq` range, capped at 1000 `seq` values | always `false` — the range itself bounds the answer | `null` |
-| `?target=site/id[&from=]` | one target's tombstones, 1000 per page, keyset-paginated by `seq` | more pages exist for this target | pass it back as `&from=` |
-| no parameters | the 1000 newest tombstones | older tombstones exist | `null` — use the range form to walk back |
+| `GET /log/revocations/range?from=&to=` | the `op=4` leaves in that `seq` range, capped at 1000 `seq` values | always `false` — the range itself bounds the answer | `null` |
+| `GET /log/revocations/target?target=site/id[&from=]` | one target's tombstones, 1000 per page, keyset-paginated by `seq` | more pages exist for this target | pass it back as `&from=` |
+| `GET /log/revocations` | the 1000 newest tombstones | older tombstones exist | `null` — use the range path to walk back |
 
 `revocations` is always ascending by `seq`.
 
-This verifier reads the range form and pages it itself, so it always sees the whole track. If you write your own auditor, page it the same way: the bare form is a browsable "what happened lately" view, not the full history, and stopping at its first response undercounts a log with more than 1000 tombstones.
+The two parameterised forms used to be query variants of `/log/revocations`, which could not state which parameters each one required. They are their own paths now, and the bare feed refuses those parameters with a `400` naming the path that answers them (`{"error": "bad_range", "use": "/log/revocations/range"}`) rather than silently serving the newest-first feed — an auditor still spelling the old form gets a failure it can read, not a verdict on a list it never asked for.
+
+This verifier reads the range path and pages it itself, so it always sees the whole track. If you write your own auditor, page it the same way: the bare feed is a browsable "what happened lately" view, not the full history, and stopping at its first response undercounts a log with more than 1000 tombstones.
 
 Revocations are whole-account. There is no per-vote reversal: erasing or deactivating an account revokes every entry that account wrote. The verifier enforces this as its account-wipe completeness check — if any entry of a pseudonym is cited by a revocation, all of that pseudonym's entries must be, so a single inconvenient vote cannot be quietly reversed under an account-operation label. Pseudonyms rotate per epoch, so completeness is checked per pseudonym; linking pseudonyms across epochs is impossible by design, as a privacy property of the log.
 
