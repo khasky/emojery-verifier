@@ -119,16 +119,30 @@ jobs:
           # -f would swallow the body; the API's error string is the whole
           # diagnosis (forbidden = key mismatch, status_ingest_disabled = ingest
           # is not enabled on that environment), and it carries nothing secret.
+          # Idempotency-Key: this run, this attempt. The endpoint appends a verdict to the
+          # public 90-day history on every call, so a retry of a POST whose response was
+          # lost would publish the same verdict twice; with the key the replay is a no-op.
+          # A re-run of the job is a NEW attempt and so a new key - that is a genuine
+          # second verdict, and it belongs in the history.
+          # The target is in the key as well as the run: the matrix fans out over the
+          # deployments, and two of them must never claim each other's key.
+          run_key="gha-${GITHUB_RUN_ID:-0}-${GITHUB_RUN_ATTEMPT:-1}-${{ matrix.target }}"
           code=$(curl -sS -o response.json -w '%{http_code}' -X POST "$API/status/ingest" \
+            -H "idempotency-key: $run_key" \
             -H "x-status-key: $key" \
             -H "content-type: application/json" \
             --data @result.json)
           body=$(cat response.json)
           echo "ingest HTTP $code: $body"
-          if [ "$code" != 200 ]; then
-            echo "::error::POST $API/status/ingest failed (HTTP $code: $body). If forbidden, this environment's STATUS_INGEST_KEY secret no longer matches the backend's — rotate both together."
-            exit 1
-          fi
+          # 2xx, not 200 exactly: the endpoint answers 202 (accepted), the same
+          # acknowledgement every other write on that API gives.
+          case "$code" in
+            2??) ;;
+            *)
+              echo "::error::POST $API/status/ingest failed (HTTP $code: $body). If forbidden, this environment's STATUS_INGEST_KEY secret no longer matches the backend's — rotate both together."
+              exit 1
+              ;;
+          esac
 
       # Runs even when the ingest step failed, so the verdict is never lost behind a
       # reporting problem.
