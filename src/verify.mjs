@@ -8,6 +8,7 @@
 //     [--pubkey <base64 raw Ed25519>] \
 //     [--wipe-grace-hours 48] [--max-checkpoint-age-hours 168] [--stats] [--counters] \
 //     [--no-rekor] [--ots] [--btc-api <Esplora base>] [--ots-external <bin>] [--json]
+//     [--no-color] [--ascii]
 //
 // --entries repo reads the raw leaves from the log repo's public
 // entries/<start>-<end>.ndjson shards instead of the API; combined with --repo
@@ -87,6 +88,7 @@ import {
   verifySth,
 } from "./transparency.mjs";
 import { runExternalOts, verifyDetachedOtsProof } from "./ots-bitcoin.mjs";
+import { beginAudit, detail, ELL, flush, mark, out, phase, raw, section, verdict } from "./report.mjs";
 
 // The published Emojery log signing key (base64 raw Ed25519). Pinned so --pubkey is optional.
 const PINNED_PUBKEY_B64 = "XeLiQ5CMhsjLmnQbIWSwWHNjcJg01Zs0veQDiwluT6c=";
@@ -95,6 +97,9 @@ const PINNED_PUBKEY_B64 = "XeLiQ5CMhsjLmnQbIWSwWHNjcJg01Zs0veQDiwluT6c=";
 // read from the sidecar under test: a compromised log repo could otherwise point the
 // "independent" check at a server it controls that echoes the expected bytes. A fork on a
 // different Rekor edits this, like the pubkey.
+let rekorEntryId = null;
+let btcBlockHeight = null;
+
 const PINNED_REKOR_URL = "https://rekor.sigstore.dev";
 
 const ENTRIES_PAGE = 1000;
@@ -107,9 +112,9 @@ const DEFAULT_SHARD_SIZE = 10_000;
 // build does not have) quietly ran a SMALLER audit and still printed PASS. An audit
 // tool that answers a question it was not asked is worse than one that refuses.
 const VALUE_FLAGS = new Set(["--api", "--repo", "--entries", "--shard-size", "--pubkey", "--wipe-grace-hours", "--max-checkpoint-age-hours", "--btc-api", "--ots-external"]);
-const BARE_FLAGS = new Set(["--stats", "--counters", "--json", "--rekor", "--no-rekor", "--ots"]);
+const BARE_FLAGS = new Set(["--stats", "--counters", "--json", "--rekor", "--no-rekor", "--ots", "--no-color", "--ascii"]);
 const USAGE =
-  "usage: node src/verify.mjs --api <url> [--repo <raw base>] [--entries api|repo] [--shard-size <n>] [--pubkey <b64>] [--wipe-grace-hours <n>] [--max-checkpoint-age-hours <n>] [--stats] [--counters] [--no-rekor] [--ots] [--btc-api <url>] [--ots-external <bin>] [--json]";
+  "usage: node src/verify.mjs --api <url> [--repo <raw base>] [--entries api|repo] [--shard-size <n>] [--pubkey <b64>] [--wipe-grace-hours <n>] [--max-checkpoint-age-hours <n>] [--stats] [--counters] [--no-rekor] [--ots] [--btc-api <url>] [--ots-external <bin>] [--json] [--no-color] [--ascii]";
 
 function arg(name) {
   const i = process.argv.indexOf(name);
@@ -160,7 +165,7 @@ export async function getRes(url, attempt = 0) {
   if (res.ok || attempt >= RETRY_MAX || !RETRY_STATUS.has(res.status)) return res;
   const after = Number(res.headers.get("retry-after"));
   const waitMs = Number.isFinite(after) && after > 0 ? Math.min(after, RETRY_AFTER_CAP_S) * 1000 : 2 ** attempt * 1000;
-  console.log(`   ${res.status} on ${new URL(url).pathname} — retry ${attempt + 1}/${RETRY_MAX} in ${waitMs / 1000}s`);
+  detail(`${res.status} on ${new URL(url).pathname} — retry ${attempt + 1}/${RETRY_MAX} in ${waitMs / 1000}s`);
   await new Promise((r) => setTimeout(r, waitMs));
   return getRes(url, attempt + 1);
 }
@@ -193,9 +198,9 @@ async function getText(url) {
   return res.text();
 }
 
-// --json (see header). Redirect human log lines to stderr so stdout carries only the JSON summary.
+// --json (see header). report.mjs keeps stdout for the JSON summary alone and prints
+// the human lines undecorated on stderr.
 const JSON_MODE = process.argv.includes("--json");
-if (JSON_MODE) console.log = (...a) => console.error(...a);
 
 const checks = {};
 function record(key, status) {
@@ -209,9 +214,16 @@ function record(key, status) {
 
 let failed = false;
 function check(ok, msg, key) {
-  console.log(`${ok ? "PASS" : "FAIL"}  ${msg}`);
+  mark(ok ? "pass" : "fail", msg);
   if (!ok) failed = true;
   if (key) record(key, ok ? "pass" : "fail");
+}
+
+// A check that could not run. Reported as its own outcome, never folded into a pass:
+// the closing tally has to say how much of the audit actually executed.
+function skipCheck(msg, key) {
+  mark("skip", msg);
+  if (key) record(key, "skip");
 }
 
 // Check 6 (--ots, see header). --ots-external adds an independent official-CLI cross-check.
@@ -273,6 +285,7 @@ async function verifyOts(repo, pubkey, btcApi, otsExternal) {
       otsBytes,
       btcApi,
     });
+    btcBlockHeight = result.height;
     check(true, `OTS: signed root anchored in Bitcoin (block ${result.height})`, "ots");
     if (sidecar.btc_block_height != null) {
       // A multi-calendar proof anchors in several blocks; the sidecar records one
@@ -355,7 +368,7 @@ async function listRepoDirViaTree(slug, dir, headers) {
   if (tree.truncated) {
     // >100k entries / 7 MB: even the Trees API stops short. Say so loudly so the
     // completeness checks below are read as "over what we could list", not "over all".
-    console.log(`   NOTE: ${dir}/ listing truncated by the GitHub Trees API (>100k files) — the archive/rekor completeness check covers the listed subset only`);
+    detail(`NOTE: ${dir}/ listing truncated by the GitHub Trees API (>100k files) — the archive/rekor completeness check covers the listed subset only`);
     return { names, truncated: true };
   }
   return { names };
@@ -435,13 +448,11 @@ async function verifyCheckpointArchive(repo, pubkey, cp, leaves, liveCp) {
     return null;
   }
   if (archive === null) {
-    console.log("SKIP  checkpoint-archive replay (--repo is not a raw.githubusercontent.com base)");
-    record("archive", "skip");
+    skipCheck("checkpoint-archive replay (--repo is not a raw.githubusercontent.com base)", "archive");
     return null;
   }
   if (archive.rateLimited) {
-    console.log("SKIP  checkpoint-archive replay (GitHub API rate-limited; set GITHUB_TOKEN to lift the quota)");
-    record("archive", "skip");
+    skipCheck("checkpoint-archive replay (GitHub API rate-limited; set GITHUB_TOKEN to lift the quota)", "archive");
     return null;
   }
   const malformed = archive.sths.filter((s) => s.parseError).length;
@@ -461,6 +472,8 @@ async function verifyCheckpointArchive(repo, pubkey, cp, leaves, liveCp) {
   check(conflicts === 0, `no two archived STHs disagree on one tree_size (${conflicts} conflict(s))`, "archive");
 
   let badSig = 0;
+  const sigs = phase("verifying archived STHs");
+  let sigDone = 0;
   for (const [size, s] of bySize) {
     const ok = await verifySth(pubkey, hexToBytes(s.signature), {
       treeSize: BigInt(size),
@@ -468,7 +481,9 @@ async function verifyCheckpointArchive(repo, pubkey, cp, leaves, liveCp) {
       ts: Number(s.ts),
     });
     if (!ok) badSig++;
+    sigs.tick(++sigDone, bySize.size);
   }
+  sigs.end(bySize.size, bySize.size);
   check(badSig === 0, `every archived STH signature verifies (${bySize.size} checked, ${badSig} bad)`, "archive");
 
   const sizes = [...bySize.keys()].map(Number).sort((a, b) => a - b);
@@ -494,10 +509,10 @@ async function verifyCheckpointArchive(repo, pubkey, cp, leaves, liveCp) {
     const got = roots.get(size);
     if (!got || bytesToHex(got) !== bySize.get(String(size)).root_hash) {
       rootMismatch++;
-      console.log(`   archive root mismatch at tree_size=${size}`);
+      detail(`archive root mismatch at tree_size=${size}`);
     }
   }
-  if (skipped > 0) console.log(`   ${skipped} archived checkpoint(s) above the ${leaves.length} leaves in hand — not replayed`);
+  if (skipped > 0) detail(`${skipped} archived checkpoint(s) above the ${leaves.length} leaves in hand — not replayed`);
   check(rootMismatch === 0, `every archived root replays from today's leaves (${replaySizes.length} checkpoint(s), ${rootMismatch} mismatch)`, "archive");
   return bySize;
 }
@@ -510,8 +525,7 @@ async function verifyCheckpointArchive(repo, pubkey, cp, leaves, liveCp) {
 // live there, not in the sidecar).
 async function verifyRekor(repo, pubkey, cp, archiveBySize) {
   if (!archiveBySize) {
-    console.log("SKIP  Rekor cross-check (needs the checkpoint archive)");
-    record("rekor", "skip");
+    skipCheck("Rekor cross-check (needs the checkpoint archive)", "rekor");
     return;
   }
   let listed;
@@ -522,8 +536,7 @@ async function verifyRekor(repo, pubkey, cp, archiveBySize) {
     return;
   }
   if (listed === null || listed.rateLimited || listed.missing || (listed.names ?? []).length === 0) {
-    console.log("SKIP  Rekor cross-check (no rekor/ sidecars published)");
-    record("rekor", "skip");
+    skipCheck("Rekor cross-check (no rekor/ sidecars published)", "rekor");
     return;
   }
   const sizes = listed.names
@@ -533,8 +546,7 @@ async function verifyRekor(repo, pubkey, cp, archiveBySize) {
     .sort((a, b) => a - b);
   const newest = sizes[sizes.length - 1];
   if (!newest) {
-    console.log("SKIP  Rekor cross-check (no sidecar at or below the current tree)");
-    record("rekor", "skip");
+    skipCheck("Rekor cross-check (no sidecar at or below the current tree)", "rekor");
     return;
   }
 
@@ -545,8 +557,7 @@ async function verifyRekor(repo, pubkey, cp, archiveBySize) {
   try {
     sidecar = await getJson(`${repo}/rekor/${newest}.json`);
   } catch (e) {
-    console.log(`SKIP  Rekor cross-check (sidecar ${newest}.json fetch failed: ${e.message})`);
-    record("rekor", "skip");
+    skipCheck(`Rekor cross-check (sidecar ${newest}.json fetch failed: ${e.message})`, "rekor");
     return;
   }
   const sth = archiveBySize.get(String(newest));
@@ -565,8 +576,7 @@ async function verifyRekor(repo, pubkey, cp, archiveBySize) {
   try {
     entryResp = await getJson(`${rekorUrl}/api/v1/log/entries/${sidecar.rekor_uuid}`);
   } catch (e) {
-    console.log(`SKIP  Rekor entry resolution (${rekorUrl} unreachable: ${e.message})`);
-    record("rekor", "skip");
+    skipCheck(`Rekor entry resolution (${rekorUrl} unreachable: ${e.message})`, "rekor");
     return;
   }
   try {
@@ -581,7 +591,8 @@ async function verifyRekor(repo, pubkey, cp, archiveBySize) {
     } else if (spec.data?.hash?.value) {
       artifactOk = String(spec.data.hash.value).toLowerCase() === bytesToHex(await sha256(sthB));
     }
-    check(artifactOk, `Rekor entry ${sidecar.rekor_uuid.slice(0, 12)}… holds the STH bytes of checkpoint ${newest}`, "rekor");
+    if (artifactOk) rekorEntryId = sidecar.rekor_uuid;
+    check(artifactOk, `Rekor entry ${sidecar.rekor_uuid.slice(0, 12)}${ELL} holds the STH bytes of checkpoint ${newest}`, "rekor");
     const sigOk = spec.signature?.content ? Buffer.from(String(spec.signature.content), "base64").equals(Buffer.from(hexToBytes(sth.signature))) : false;
     check(sigOk, "Rekor entry carries our Ed25519 checkpoint signature", "rekor");
     const pem = spec.signature?.publicKey?.content ? Buffer.from(String(spec.signature.publicKey.content), "base64").toString("utf8") : "";
@@ -589,8 +600,7 @@ async function verifyRekor(repo, pubkey, cp, archiveBySize) {
   } catch (e) {
     // A malformed/unexpected entry body is ambiguous (Rekor-side format drift),
     // not proof of tampering — skip loudly rather than fail the whole run.
-    console.log(`SKIP  Rekor entry parse (${e.message})`);
-    record("rekor", "skip");
+    skipCheck(`Rekor entry parse (${e.message})`, "rekor");
   }
 }
 
@@ -625,7 +635,8 @@ function csvField(value) {
 // leaves and it is the real ceiling here — past a few million, fold and verify
 // leaf-by-leaf from a streamed source instead of materializing two arrays.
 export async function fetchEntries(api, repo, entriesMode, treeSize, shardSize) {
-  const out = [];
+  const rows = [];
+  const fetching = phase(entriesMode === "repo" ? "reading entries shards" : "fetching leaves");
   if (entriesMode === "repo") {
     for (let start = 1; start <= treeSize; start += shardSize) {
       const path = `entries/${padSeq(start)}-${padSeq(start + shardSize - 1)}.ndjson`;
@@ -649,35 +660,41 @@ export async function fetchEntries(api, repo, entriesMode, treeSize, shardSize) 
         const t = line.trim();
         if (!t) continue;
         const e = JSON.parse(t);
-        if (Number(e.seq) <= treeSize) out.push(e);
+        if (Number(e.seq) <= treeSize) rows.push(e);
       }
+      fetching.tick(rows.length, treeSize);
     }
     // The public shards can trail the live checkpoint by a batch of leaves,
     // so a shard-sourced read routinely stops short. Fill that tail from the API
     // (one page, against the ~treeSize/ENTRIES_PAGE an API-only run would spend),
     // so a shard-sourced audit still covers the checkpoint under test.
-    const covered = out.length ? Number(out[out.length - 1].seq) : 0;
+    const covered = rows.length ? Number(rows[rows.length - 1].seq) : 0;
     if (covered < treeSize) {
       if (!api) {
         // Offline: main() steps the audit back to a checkpoint this coverage
         // reproduces, so this is a note about the mirror, not a verdict.
-        console.log(`   entries/ shards cover ${covered} of ${treeSize} leaves — the newest tail is not mirrored yet, and an offline audit cannot fill it`);
-        return out;
+        detail(`entries/ shards cover ${covered} of ${treeSize} leaves — the newest tail is not mirrored yet, and an offline audit cannot fill it`);
+        fetching.end(rows.length, treeSize);
+        return rows;
       }
-      console.log(`   entries/ shards cover ${covered} of ${treeSize} leaves — filling the tail from the API`);
+      detail(`entries/ shards cover ${covered} of ${treeSize} leaves — filling the tail from the API`);
       for (let from = covered + 1; from <= treeSize; from += ENTRIES_PAGE) {
         const to = Math.min(from + ENTRIES_PAGE - 1, treeSize);
-        out.push(...((await getJson(`${api}/log/entries?from=${from}&to=${to}`)).entries ?? []));
+        rows.push(...((await getJson(`${api}/log/entries?from=${from}&to=${to}`)).entries ?? []));
+        fetching.tick(rows.length, treeSize);
       }
     }
-    return out;
+    fetching.end(rows.length, treeSize);
+    return rows;
   }
   for (let from = 1; from <= treeSize; from += ENTRIES_PAGE) {
     const to = Math.min(from + ENTRIES_PAGE - 1, treeSize);
     const page = await getJson(`${api}/log/entries?from=${from}&to=${to}`);
-    out.push(...page.entries);
+    rows.push(...page.entries);
+    fetching.tick(rows.length, treeSize);
   }
-  return out;
+  fetching.end(rows.length, treeSize);
+  return rows;
 }
 
 // Every op=4 tombstone the API lists, for the set comparison in check 4b.
@@ -701,13 +718,13 @@ export async function fetchRevocations(api, treeSize) {
     // would read as a set mismatch — a FAIL on an honest log.
     return (bare.revocations ?? []).filter((r) => Number(r.seq) <= treeSize);
   }
-  const out = [];
+  const rows = [];
   for (let from = 1; from <= treeSize; from += ENTRIES_PAGE) {
     const to = Math.min(from + ENTRIES_PAGE - 1, treeSize);
     const page = await getJson(`${api}/log/revocations/range?from=${from}&to=${to}`);
-    out.push(...(page.revocations ?? []));
+    rows.push(...(page.revocations ?? []));
   }
-  return out;
+  return rows;
 }
 
 // With --entries repo the API's own /log/entries is never read, so a regression
@@ -780,6 +797,7 @@ async function main() {
     process.exit(2);
   }
 
+  beginAudit();
   const startedAt = Date.now();
   // A log that has never signed anything answers 404 no_checkpoint - the state a
   // brand-new or freshly reset environment is IN, not a break (the backend's own
@@ -787,9 +805,9 @@ async function main() {
   // contradict, so say so and stop; crashing here published "Independent
   // verification: FAIL" for an environment whose log was simply empty.
   if (api && (await emptyLog(api))) {
-    console.log("the log has published no checkpoint yet (empty log) — nothing to verify");
+    out("the log has published no checkpoint yet (empty log) — nothing to verify");
     if (JSON_MODE) process.stdout.write(`${JSON.stringify({ result: "pass", tree_size: 0, ts: Date.now(), checks: { log: "empty" }, duration_sec: 0 })}\n`);
-    else console.log("\nRESULT: PASS (empty log)");
+    else out("\nRESULT: PASS (empty log)");
     return;
   }
   // Offline mode reads the tip from the repo anchor itself (same
@@ -797,7 +815,7 @@ async function main() {
   const liveCp = api ? await getJson(`${api}/log/checkpoint`) : await getJson(`${repo}/checkpoints/latest.json`);
   let cp = liveCp;
   let treeSize = Number(cp.tree_size);
-  console.log(`checkpoint: tree_size=${cp.tree_size} ts=${cp.ts}${api ? "" : " (from repo latest.json — offline audit)"}`);
+  out(`checkpoint: tree_size=${cp.tree_size} ts=${cp.ts}${api ? "" : " (from repo latest.json — offline audit)"}`);
 
   // Offline the raw leaves come first, because how far the shards reach decides
   // WHICH checkpoint this run can audit. With --api the tail is fetched instead,
@@ -813,13 +831,15 @@ async function main() {
         cp = stepped;
         treeSize = Number(stepped.tree_size);
         preloaded = preloaded.filter((e) => Number(e.seq) <= treeSize);
-        console.log(`   auditing published checkpoint tree_size=${treeSize} instead — the newest the shards fully cover (live tip ${liveCp.tree_size})`);
+        detail(`auditing published checkpoint tree_size=${treeSize} instead — the newest the shards fully cover (live tip ${liveCp.tree_size})`);
       } else {
         uncovered = true;
-        console.log(`   no published checkpoint at or below ${covered} leaves — nothing in the shards can be replayed against a signed root`);
+        detail(`no published checkpoint at or below ${covered} leaves — nothing in the shards can be replayed against a signed root`);
       }
     }
   }
+
+  section("Checkpoint");
 
   // 1. signature
   const sigOk = await verifySth(pubkey, hexToBytes(cp.signature), {
@@ -866,27 +886,31 @@ async function main() {
       check(false, `GitHub anchor fetch: ${e.message}`, "github_anchor");
     }
   } else {
-    console.log(`SKIP  GitHub anchor cross-check (${repo ? "offline audit — the anchor is the checkpoint under test" : "no --repo"})`);
-    record("github_anchor", "skip");
+    skipCheck(`GitHub anchor cross-check (${repo ? "offline audit — the anchor is the checkpoint under test" : "no --repo"})`, "github_anchor");
   }
+
+  section("Leaves & Merkle");
 
   // 3. refetch all leaves (API pages or repo shards), recompute leaf_hash +
   //    Merkle root
   const leaves = [];
   const entries = [];
   let leafMismatch = 0;
-  for (const e of preloaded ?? (await fetchEntries(api, repo, entriesMode, treeSize, shardSize))) {
+  const served = preloaded ?? (await fetchEntries(api, repo, entriesMode, treeSize, shardSize));
+  const rehash = phase("recomputing leaf hashes");
+  for (const e of served) {
     const leaf = await leafHashFromEntry(e);
     if (bytesToHex(leaf) !== e.leaf_hash) leafMismatch++;
     leaves.push(leaf);
     entries.push(e);
+    rehash.tick(leaves.length, served.length);
   }
+  rehash.end(leaves.length, served.length);
   check(leafMismatch === 0, `every recomputed leaf_hash matches the served leaf (${leafMismatch} mismatch)`, "leaf_hashes");
   if (uncovered) {
     // Nothing signed covers these leaves, so there is no root to compare them to.
     // That is a gap in what the mirror publishes, not evidence against the log.
-    console.log(`SKIP  Merkle root (the ${leaves.length} mirrored leaves reach no published checkpoint; pass --api, or audit a mirror that carries one)`);
-    record("merkle_root", "skip");
+    skipCheck(`Merkle root (the ${leaves.length} mirrored leaves reach no published checkpoint; pass --api, or audit a mirror that carries one)`, "merkle_root");
   } else {
     check(leaves.length === treeSize, `fetched all ${treeSize} leaves (got ${leaves.length}, source: ${entriesMode})`, "merkle_root");
     const root = await merkleRootFromLeaves(leaves);
@@ -896,9 +920,11 @@ async function main() {
   // 3a. the published hash chain: the root pins WHICH leaves are in the tree, the
   //     chain pins their ORDER, and every /log/entries row publishes its entry_hash.
   const chain = await checkHashChain(entries, leaves);
-  for (const v of chain.slice(0, 5)) console.log(`   ${v}`);
-  if (chain.length > 5) console.log(`   …and ${chain.length - 5} more`);
+  for (const v of chain.slice(0, 5)) detail(v);
+  if (chain.length > 5) detail(`${ELL}and ${chain.length - 5} more`);
   check(chain.length === 0, `hash chain replays from genesis (${entries.length} leaves, ${chain.length} break(s))`, "hash_chain");
+
+  section("Checkpoint archive");
 
   // 3b. checkpoint-archive replay: the whole PUBLISHED history must lie on one
   //     append-only line through today's leaves.
@@ -906,9 +932,10 @@ async function main() {
   if (repo) {
     archiveBySize = await verifyCheckpointArchive(repo, pubkey, cp, leaves, liveCp);
   } else {
-    console.log("SKIP  checkpoint-archive replay (no --repo)");
-    record("archive", "skip");
+    skipCheck("checkpoint-archive replay (no --repo)", "archive");
   }
+
+  section("Independent witness");
 
   // 3c. (default; --no-rekor to skip) the newest checkpoint anchored to Sigstore Rekor
   //     really is there, carrying exactly our signed STH bytes. An unreachable Rekor
@@ -917,10 +944,13 @@ async function main() {
   //     newest witness is checkable even when the leaves stop short of it.
   if (!rekorDisabled && repo) {
     await verifyRekor(repo, pubkey, liveCp, archiveBySize);
+  } else if (!repo && !rekorDisabled) {
+    skipCheck("Rekor cross-check (no --repo)", "rekor");
   } else {
-    if (!repo && !rekorDisabled) console.log("SKIP  Rekor cross-check (no --repo)");
     record("rekor", "skip");
   }
+
+  section("Entries cross-check");
 
   // 3d. entries-source cross-check — only meaningful when the leaves came from the
   //     repo shards; with --entries api check 3 already read every API page.
@@ -939,10 +969,10 @@ async function main() {
   // alone (the same numbers anyone can recompute without the operator).
   if (statsReport) {
     const perDay = dailyAggregates(entries);
-    console.log("day,votes,unique_user_refs,revokes");
+    raw("day,votes,unique_user_refs,revokes");
     for (const day of [...perDay.keys()].sort()) {
       const a = perDay.get(day);
-      console.log(`${day},${a.votes},${a.refs.size},${a.revokes}`);
+      raw(`${day},${a.votes},${a.refs.size},${a.revokes}`);
     }
   }
 
@@ -953,34 +983,36 @@ async function main() {
   // verification surface, and this tool's whole value is that its totals are
   // derived independently.
   const counts = foldCounters(entries);
-  console.log(`folded ${counts.size} (site,target,reaction) counters from ${entries.length} events`);
+  out(`folded ${counts.size} (site,target,reaction) counters from ${entries.length} events`);
 
   // --counters: the totals themselves, so the auditor publishes numbers rather than
   // a claim that numbers were computed. Zero-valued keys (added then removed, or
   // revoked away) are dropped — they are fold bookkeeping, not counts anyone shows.
   if (countersReport) {
-    console.log("site,target_id,reaction,count");
+    raw("site,target_id,reaction,count");
     for (const [key, value] of [...counts].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))) {
       if (value <= 0) continue;
       const [site, target, reaction] = splitCounterKey(key);
-      console.log(`${csvField(site)},${csvField(target)},${csvField(reaction)},${value}`);
+      raw(`${csvField(site)},${csvField(target)},${csvField(reaction)},${value}`);
     }
   }
+
+  section("Log semantics");
 
   // 4b. revocation audit surface: the public /log/revocations list must equal the
   //     set of op=4 tombstones we folded from the log.
   if (!api) {
-    console.log("SKIP  /log/revocations comparison (offline audit, no --api)");
-    record("revocations", "skip");
+    skipCheck("/log/revocations comparison (offline audit, no --api)", "revocations");
   } else {
     try {
       const revList = await fetchRevocations(api, treeSize);
-      console.log(`revocations: ${revList.length} tombstone(s)`);
-      for (const r of revList.slice(0, 20)) {
-        console.log(
-          `   revoke seq=${r.seq} -> revoke_seq=${r.revoke_seq} reason=${r.reason_code ?? "-"} target=${r.target?.site}/${r.target?.target_id}`,
+      out(`revocations: ${revList.length} tombstone(s)`);
+      for (const r of revList.slice(0, 5)) {
+        detail(
+          `revoke seq=${r.seq} -> revoke_seq=${r.revoke_seq} reason=${r.reason_code ?? "-"} target=${r.target?.site}/${r.target?.target_id}`,
         );
       }
+      if (revList.length > 5) detail(`${ELL}and ${revList.length - 5} more`);
       const op4 = entries
         .filter((e) => e.op === 4)
         .map((e) => String(e.seq))
@@ -999,16 +1031,16 @@ async function main() {
   // 5. structural consistency an honest log always satisfies: entries are
   //    well-formed and no per-(target,reaction) count is ever driven negative.
   const violations = checkStructuralInvariants(entries);
-  for (const v of violations.slice(0, 20)) console.log(`   ${v}`);
-  if (violations.length > 20) console.log(`   …and ${violations.length - 20} more`);
+  for (const v of violations.slice(0, 20)) detail(v);
+  if (violations.length > 20) detail(`${ELL}and ${violations.length - 20} more`);
   check(violations.length === 0, `structural invariants hold (${violations.length} violation(s))`, "invariants");
 
   // 5b. invariant F — account-wipe completeness. Revocations are whole-account,
   //     so a pseudonym with some but not all of its leaves revoked is flagged
   //     (after the grace window for wipes still in flight at checkpoint time).
   const wipe = checkWipeCompleteness(entries, Number(cp.ts), wipeGraceHours * 3_600_000);
-  for (const v of wipe.slice(0, 20)) console.log(`   ${v}`);
-  if (wipe.length > 20) console.log(`   …and ${wipe.length - 20} more`);
+  for (const v of wipe.slice(0, 20)) detail(v);
+  if (wipe.length > 20) detail(`${ELL}and ${wipe.length - 20} more`);
   check(
     wipe.length === 0,
     `account wipes are complete (${wipe.length} violation(s); grace ${wipeGraceHours}h)`,
@@ -1016,8 +1048,10 @@ async function main() {
   );
 
   // 6. optional OpenTimestamps → Bitcoin deep audit.
-  if (ots) await verifyOts(repo, pubkey, btcApi, otsExternal);
-  else record("ots", "skip");
+  if (ots) {
+    section("Bitcoin anchor");
+    await verifyOts(repo, pubkey, btcApi, otsExternal);
+  } else record("ots", "skip");
 
   if (JSON_MODE) {
     process.stdout.write(
@@ -1030,7 +1064,25 @@ async function main() {
       }) + "\n",
     );
   } else {
-    console.log(failed ? "\nRESULT: FAIL" : "\nRESULT: PASS");
+    const slug = repo ? githubSlugFromRawBase(repo) : null;
+    verdict({
+      ok: !failed,
+      treeSize: cp.tree_size,
+      rootHash: `${cp.root_hash.slice(0, 10)}${ELL}${cp.root_hash.slice(-6)}`,
+      keyLabel: `${pubkey.slice(0, 10)}${ELL} ${pubkey === PINNED_PUBKEY_B64 ? "(pinned in verify.mjs)" : "(--pubkey)"}`,
+      witnesses: [
+        checks.github_anchor === "pass" ? "GitHub anchor" : null,
+        rekorEntryId ? `Rekor ${rekorEntryId.slice(0, 12)}${ELL}` : null,
+        btcBlockHeight ? `Bitcoin block ${btcBlockHeight}` : null,
+      ],
+      sources: [
+        api ? new URL(api).host : "offline (API not contacted)",
+        slug ? `${slug.owner}/${slug.repo}@${slug.ref}` : repo ? new URL(repo).host : null,
+        entriesMode === "repo" ? "entry shards" : "API pages",
+      ],
+      elapsedSec: ((Date.now() - startedAt) / 1000).toFixed(1),
+      reproduce: `node src/verify.mjs ${process.argv.slice(2).join(" ")}`,
+    });
   }
   process.exitCode = failed ? 1 : 0;
 }
@@ -1039,6 +1091,7 @@ async function main() {
 // audit itself runs only when this file is the process entrypoint.
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
   main().catch((e) => {
+    flush();
     // The message says what to fix; the stack says nothing a user of this tool acts
     // on, so it waits behind VERIFY_DEBUG=1 instead of burying the message.
     console.error(`verifier error: ${e?.message ?? e}`);

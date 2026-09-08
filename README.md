@@ -19,7 +19,7 @@ npx github:khasky/emojery-verifier --api https://api.emojery.app \
   --repo https://raw.githubusercontent.com/khasky/emojery-log/main
 ```
 
-…or from a checkout:
+or from a checkout:
 
 ```
 node src/verify.mjs --api https://api.emojery.app \
@@ -43,35 +43,61 @@ node src/verify.mjs --entries repo --api https://api.emojery.app \
 Example result:
 
 ```bash
-checkpoint: tree_size=1433 ts=1787716853962
-PASS  checkpoint Ed25519 signature
-PASS  checkpoint is fresh (0.3h old, threshold 168h — a quiet log ages legitimately; tune --max-checkpoint-age-hours)
-PASS  GitHub anchor matches signed root (tree_size=1433)
-PASS  every recomputed leaf_hash matches the served leaf (0 mismatch)
-PASS  fetched all 1433 leaves (got 1433, source: api)
-PASS  recomputed Merkle root == checkpoint root_hash
-PASS  hash chain replays from genesis (1433 leaves, 0 break(s))
-PASS  checkpoint archive parses (66 STH line(s) in 19 shard(s))
-PASS  no two archived STHs disagree on one tree_size (0 conflict(s))
-PASS  every archived STH signature verifies (66 checked, 0 bad)
-PASS  archived STH timestamps are monotone in tree_size (0 regression(s))
-PASS  archive never exceeds the live tree (max archived 1433 <= 1433)
-PASS  the live checkpoint is present in the archive shards
-PASS  every archived root replays from today's leaves (66 checkpoint(s), 0 mismatch)
-PASS  rekor sidecar 1433 matches the archived checkpoint
-PASS  Rekor entry 108e9186e8c5… holds the STH bytes of checkpoint 1433
-PASS  Rekor entry carries our Ed25519 checkpoint signature
-PASS  Rekor entry public key is the published log key
-folded 1126 (site,target,reaction) counters from 1433 events
-revocations: 182 tombstone(s)
-   revoke seq=463 -> revoke_seq=459 reason=erasure_self target=github/example/repo
-   revoke seq=464 -> revoke_seq=456 reason=erasure_self target=threads/Db0eMtEHAc6
-   …
-PASS  /log/revocations matches op=4 leaves in the log (182)
-PASS  structural invariants hold (0 violation(s))
-PASS  account wipes are complete (0 violation(s); grace 48h)
+checkpoint: tree_size=389 ts=1788854468525
+── Checkpoint ────────────────────────────────────────────────────────── 3 ✓
+   ✓  checkpoint Ed25519 signature
+   ✓  checkpoint is fresh (1.9h old, threshold 168h — a quiet log ages legitimately; tune --max-checkpoint-age-hours)
+   ✓  GitHub anchor matches signed root (tree_size=389)
 
-RESULT: PASS
+── Leaves & Merkle ───────────────────────────────────────────────────── 4 ✓
+   reading entries shards  ████████████████ 389/389  0.0s
+   recomputing leaf hashes ████████████████ 389/389  0.0s
+   ✓  every recomputed leaf_hash matches the served leaf (0 mismatch)
+   ✓  fetched all 389 leaves (got 389, source: repo)
+   ✓  recomputed Merkle root == checkpoint root_hash
+   ✓  hash chain replays from genesis (389 leaves, 0 break(s))
+
+── Checkpoint archive ────────────────────────────────────────────────── 7 ✓
+   ✓  checkpoint archive parses (22 STH line(s) in 5 shard(s))
+   ✓  no two archived STHs disagree on one tree_size (0 conflict(s))
+   verifying archived STHs ████████████████ 22/22  0.1s
+   ✓  every archived STH signature verifies (22 checked, 0 bad)
+   ✓  archived STH timestamps are monotone in tree_size (0 regression(s))
+   ✓  archive never exceeds the live tree (max archived 389 <= 389)
+   ✓  the live checkpoint is present in the archive shards
+   ✓  every archived root replays from today's leaves (22 checkpoint(s), 0 mismatch)
+
+── Independent witness ───────────────────────────────────────────────── 4 ✓
+   ✓  rekor sidecar 389 matches the archived checkpoint
+   ✓  Rekor entry 108e9186e8c5... holds the STH bytes of checkpoint 389
+   ✓  Rekor entry carries our Ed25519 checkpoint signature
+   ✓  Rekor entry public key is the published log key
+
+── Entries cross-check ───────────────────────────────────────────────── 1 ✓
+   ✓  /log/entries agrees with the repo shards over the first 389 leaves (served 389)
+folded 268 (site,target,reaction) counters from 389 events
+
+── Log semantics ─────────────────────────────────────────────────────── 3 ✓
+revocations: 80 tombstone(s)
+   revoke seq=132 -> revoke_seq=2 reason=erasure_self target=x/2095162197433348142
+   revoke seq=133 -> revoke_seq=3 reason=erasure_self target=x/2095156958189724041
+   revoke seq=134 -> revoke_seq=4 reason=erasure_self target=x/2094793461228818555
+   revoke seq=135 -> revoke_seq=5 reason=erasure_self target=x/2056672338423206234
+   revoke seq=136 -> revoke_seq=6 reason=erasure_self target=x/2073520150452506786
+   ...and 75 more
+   ✓  /log/revocations matches op=4 leaves in the log (80)
+   ✓  structural invariants hold (0 violation(s))
+   ✓  account wipes are complete (0 violation(s); grace 48h)
+
+┌─ VERIFIED ───────────────────────────────────────────────────────────────┐
+│  RESULT     PASS   22 passed                                             │
+│  tree size  389   root 83a4552e3d...4a6491                                 │
+│  log key    XeLiQ5CMhs... (pinned in verify.mjs)                           │
+│  witnesses  GitHub anchor · Rekor 108e9186e8c5...                          │
+│  sources    api.emojery.app · khasky/emojery-log@main · entry shards     │
+│  elapsed    1.9s                                                         │
+└──────────────────────────────────────────────────────────────────────────┘
+  reproduce: node src/verify.mjs --api https://api.emojery.app --repo https://raw.githubusercontent.com/khasky/emojery-log/main --entries repo
 ```
 
 An offline run whose shards trail the tip says so and steps back:
@@ -106,6 +132,8 @@ Every flag is listed below, and anything else is rejected with exit code `2` —
 - `--btc-api <url>` (optional, with `--ots`): override the Esplora-compatible Bitcoin block-header source (default: `https://blockstream.info/api`).
 - `--ots-external <bin>` (optional, with `--ots`): also cross-check the same proof with an external OpenTimestamps CLI such as `ots`. A `.cmd`/`.bat` wrapper works on Windows too. The external tool is trusted to run: if the binary is missing or its own environment is broken (the official Python client needs a loadable OpenSSL, which it does not always find on Windows), the run FAILS — you asked for that cross-check explicitly, so it is not downgraded to a skip.
 - `--json` (optional): print one machine-readable summary (`{ result, tree_size, ts, checks, duration_sec }`) on stdout instead of the human report — used by the status job below. Human/info lines then go to stderr; the exit code is unchanged.
+- `--no-color` (optional): drop the colour. It is already off when stdout is not a terminal, when `NO_COLOR` is set, and under `--json`; `FORCE_COLOR=1` forces it back on through a pipe.
+- `--ascii` (optional): draw the report with ASCII characters only, for a console on a legacy code page where the box-drawing glyphs would be mojibake. Chosen automatically on Windows unless the environment names a UTF-8 terminal (`WT_SESSION`, `TERM`, `ConEmuANSI`).
 
 ## What it checks
 
@@ -169,7 +197,7 @@ By default `--btc-api` is `https://blockstream.info/api`; any Esplora-compatible
 
 ### Status reporting (`--json` + scheduled report)
 
-The verifier doubles as the **independent** check behind the public status page at `emojery.app/status`. The workflow `.github/workflows/verify-and-report.yml` runs daily (and on demand), executes `node src/verify.mjs --json …` against the public API + log, and POSTs the verdict to the API's `POST /status/ingest` endpoint; the status page renders it as the "Independent verification" component.
+The verifier doubles as the **independent** check behind the public status page at `emojery.app/status`. The workflow `.github/workflows/verify-and-report.yml` runs daily (and on demand), executes `node src/verify.mjs --json ...` against the public API + log, and POSTs the verdict to the API's `POST /status/ingest` endpoint; the status page renders it as the "Independent verification" component.
 
 The job is a matrix over the deployments it watches, and each one signs its own log, so the key and the ingest secret live **per GitHub environment**, not on the repository:
 
