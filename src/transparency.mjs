@@ -12,7 +12,15 @@ ed.etc.sha512Async = (...m) =>
 const LEAF_PREFIX = 0x00;
 const NODE_PREFIX = 0x01;
 const LP_NULL = 0xffffffff;
-const OP_REVOKE = 4;
+export const OP_REVOKE = 4;
+// Identity track (op 5..7). Never folded into counters; checked by the identity
+// invariants below and by identity.mjs.
+export const OP_ENROLL = 5; // one per account: the ZK-proven OpenID registration, keyed by nullifier
+export const OP_ISSUE = 6; // one blind-signed epoch-key grant to an enrolled nullifier
+export const OP_KEY = 7; // one registered epoch pubkey with its unblinded RSA-PSS signature
+// How many ISSUE leaves one enrolled account may hold per epoch (a second device,
+// a reinstall). Pinned to the backend's EPOCH_KEYS_PER_ACCOUNT.
+export const EPOCH_KEYS_PER_ACCOUNT = 3;
 
 const TE = new TextEncoder();
 
@@ -79,6 +87,15 @@ export async function sha256(b) {
   return new Uint8Array(await crypto.subtle.digest("SHA-256", b));
 }
 
+// canonical = u64(seq) || u64(ts) || u8(op)
+//           || lp(site) || lp(target_id) || lp(reaction) || lp(prev_reaction) || lp(user_ref)
+// op 1..3 with a client key appends || lpb(pubkey) || lpb(sig) || lp(nonce) — a legacy
+//   (1.0.0, unsigned) vote keeps the bare 8-field bytes;
+// op=4 appends || u64(revoke_seq) || lp(reason_code) || lpb(evidence_hash);
+// op=5 appends || lp(nullifier) || lp(iss) || lp(aud) || lp(kid) || lpb(proof) || lpb(salt_commitment);
+// op=6 appends || lp(nullifier) || u64(epoch);
+// op=7 appends || u64(epoch) || lpb(pubkey) || lpb(key_sig).
+// For op 4..7 the five base strings are NULL.
 export function serializeLeaf(f) {
   const base = concatBytes(
     u64be(f.seq),
@@ -90,8 +107,35 @@ export function serializeLeaf(f) {
     lp(f.prevReaction),
     lp(f.userRef),
   );
-  if (f.op !== OP_REVOKE) return base;
-  return concatBytes(base, u64be(f.revokeSeq ?? 0), lp(f.reasonCode ?? null), lpb(f.evidenceHash ?? null));
+  switch (f.op) {
+    case OP_REVOKE:
+      return concatBytes(base, u64be(f.revokeSeq ?? 0), lp(f.reasonCode ?? null), lpb(f.evidenceHash ?? null));
+    case OP_ENROLL:
+      return concatBytes(base, lp(f.nullifier ?? null), lp(f.iss ?? null), lp(f.aud ?? null), lp(f.kid ?? null), lpb(f.proof ?? null), lpb(f.saltCommitment ?? null));
+    case OP_ISSUE:
+      return concatBytes(base, lp(f.nullifier ?? null), u64be(f.epoch ?? 0));
+    case OP_KEY:
+      return concatBytes(base, u64be(f.epoch ?? 0), lpb(f.clientPubkey ?? null), lpb(f.keySig ?? null));
+    default:
+      if (f.clientPubkey == null) return base;
+      return concatBytes(base, lpb(f.clientPubkey), lpb(f.clientSig ?? null), lp(f.clientNonce ?? null));
+  }
+}
+
+// --- signed messages (cross-repo contract) ---------------------------------
+//
+// The extension signs these exact bytes; the verifier re-derives them from the
+// public leaf. Domain prefixes are raw UTF-8, not length-prefixed.
+
+// Ed25519 message of one vote: "emojery-vote-v1" || lp(site) || lp(target_id) || lp(reaction) || lp(nonce).
+export function voteSignatureMessage(site, targetId, reaction, nonce) {
+  return concatBytes(utf8("emojery-vote-v1"), lp(site), lp(targetId), lp(reaction), lp(nonce));
+}
+
+// RSA-PSS (blind-signed) message binding an epoch pubkey: "emojery-epoch-key-v1" || u64be(epoch) || pubkey32.
+export function epochKeyMessage(epoch, pubkey) {
+  if (pubkey.length !== 32) throw new Error("epochKeyMessage: pubkey must be 32 bytes");
+  return concatBytes(utf8("emojery-epoch-key-v1"), u64be(epoch), pubkey);
 }
 export function leafHash(f) {
   return sha256(concatBytes(u8(LEAF_PREFIX), serializeLeaf(f)));
@@ -318,9 +362,21 @@ export function checkStructuralInvariants(entries) {
       else if (revokedSeqs.has(rk)) violations.push(`seq=${e.seq}: double-revoke of seq=${rk}`);
       else revokedSeqs.add(rk);
       continue; // revoke has no B/C state-machine effect
+    } else if (op === OP_ENROLL || op === OP_ISSUE || op === OP_KEY) {
+      // Identity leaves carry no vote fields; their own shape is checked here, their
+      // cross-leaf rules (G/H/I) by checkIdentityInvariants.
+      for (const v of identityLeafShape(e)) violations.push(`seq=${e.seq}: ${v}`);
+      continue;
     } else {
       violations.push(`seq=${e.seq}: unexpected op=${op}`);
       continue;
+    }
+    // A signed vote (1.0.1+) carries its key, signature and nonce; a legacy vote has none
+    // of the three. Half a tail is neither.
+    if (e.client_pubkey != null || e.client_sig != null || e.client_nonce != null) {
+      if (!isHex(e.client_pubkey, 64)) violations.push(`seq=${e.seq}: client_pubkey is not 32 bytes hex`);
+      if (!isHex(e.client_sig, 128)) violations.push(`seq=${e.seq}: client_sig is not 64 bytes hex`);
+      if (typeof e.client_nonce !== "string" || e.client_nonce.length === 0) violations.push(`seq=${e.seq}: client_nonce missing`);
     }
 
     // B. per-(user_ref, site, target) state machine
@@ -355,6 +411,171 @@ export function checkStructuralInvariants(entries) {
     seen123.add(String(e.seq)); // op∈{1,2,3} only (op=4 continues earlier)
   }
   return violations;
+}
+
+function isHex(v, chars) {
+  return typeof v === "string" && v.length === chars && /^[0-9a-f]+$/i.test(v);
+}
+
+// The ENROLL proof column, base64 on the wire. The spec names the key `proof`; `proof_b64`
+// is read too so a projection spelling it that way still hashes.
+export function proofBase64(e) {
+  return e.proof ?? e.proof_b64 ?? null;
+}
+
+function isEpoch(v) {
+  return v != null && /^\d{1,19}$/.test(String(v));
+}
+
+// Per-leaf shape of an identity leaf (invariant A for op 5..7): the vote fields are
+// NULL and the op's own fields are present and well-sized.
+function identityLeafShape(e) {
+  const v = [];
+  if (e.site != null || e.target_id != null || e.reaction != null || e.prev_reaction != null) v.push(`op=${e.op} leaf carries vote fields`);
+  if (e.op === OP_ENROLL) {
+    if (!isHex(e.nullifier, 64)) v.push("enroll nullifier is not 32 bytes hex");
+    if (typeof e.iss !== "string" || !e.iss) v.push("enroll iss missing");
+    if (typeof e.aud !== "string" || !e.aud) v.push("enroll aud missing");
+    if (typeof e.kid !== "string" || !e.kid) v.push("enroll kid missing");
+    if (typeof proofBase64(e) !== "string" || !proofBase64(e)) v.push("enroll proof missing");
+    if (!isHex(e.salt_commitment, 64)) v.push("enroll salt_commitment is not 32 bytes hex");
+  } else if (e.op === OP_ISSUE) {
+    if (!isHex(e.nullifier, 64)) v.push("issue nullifier is not 32 bytes hex");
+    if (!isEpoch(e.epoch)) v.push("issue epoch missing");
+  } else if (e.op === OP_KEY) {
+    if (!isEpoch(e.epoch)) v.push("key epoch missing");
+    if (!isHex(e.client_pubkey, 64)) v.push("key client_pubkey is not 32 bytes hex");
+    if (!isHex(e.key_sig, 512)) v.push("key key_sig is not 256 bytes hex");
+  }
+  return v;
+}
+
+// A vote leaf that carries a client key (1.0.1+). A legacy 1.0.0 vote has none and is
+// admitted only under --allow-unsigned-votes.
+export function isSignedVote(e) {
+  return (e.op === 1 || e.op === 2 || e.op === 3) && e.client_pubkey != null;
+}
+
+// Identity invariants G (structural half), H (count half) and I, replayed from the
+// public entries alone — no key material, no network. The cryptographic halves of G
+// and H live in verifyIdentitySignatures, J in identity.mjs.
+//
+//   G. a signed vote names a pubkey registered by an EARLIER op=7 leaf, its user_ref is
+//      SHA256(pubkey), and its nonce is unique per pubkey (a replayed signature is the
+//      same bytes twice, so a repeated nonce is the tell).
+//   H. per epoch, count(KEY) <= count(ISSUE): the operator can register no more keys
+//      than it blind-signed grants for; and no pubkey is registered twice.
+//   I. an ISSUE cites an EARLIER ENROLL by nullifier, at most EPOCH_KEYS_PER_ACCOUNT
+//      per (nullifier, epoch); an ENROLL nullifier is unique (one account, one enrollment).
+//
+// Returns { violations, signedVotes, unsignedVotes, enrolls, issues, keys }.
+export async function checkIdentityInvariants(entries) {
+  const violations = [];
+  const enrolled = new Set(); // nullifiers with an earlier ENROLL
+  const issuesPer = new Map(); // `${nullifier}\x00${epoch}` -> count
+  const issuesPerEpoch = new Map(); // epoch -> count(ISSUE)
+  const keysPerEpoch = new Map(); // epoch -> count(KEY)
+  const registered = new Map(); // pubkey hex -> seq of its KEY leaf
+  const noncesPer = new Map(); // pubkey hex -> Set(nonce)
+  let signedVotes = 0;
+  let unsignedVotes = 0;
+  let enrolls = 0;
+  let issues = 0;
+  let keys = 0;
+  for (const e of entries) {
+    if (e.op === OP_ENROLL) {
+      enrolls++;
+      if (typeof e.nullifier !== "string") continue; // shape: invariant A
+      if (enrolled.has(e.nullifier)) violations.push(`seq=${e.seq}: second ENROLL for nullifier ${e.nullifier.slice(0, 12)}...`);
+      enrolled.add(e.nullifier);
+    } else if (e.op === OP_ISSUE) {
+      issues++;
+      if (typeof e.nullifier !== "string" || !isEpoch(e.epoch)) continue;
+      const epoch = String(e.epoch);
+      if (!enrolled.has(e.nullifier)) violations.push(`seq=${e.seq}: ISSUE for nullifier ${e.nullifier.slice(0, 12)}... with no prior ENROLL`);
+      const k = `${e.nullifier}\x00${epoch}`;
+      const n = (issuesPer.get(k) ?? 0) + 1;
+      issuesPer.set(k, n);
+      if (n > EPOCH_KEYS_PER_ACCOUNT) violations.push(`seq=${e.seq}: ISSUE #${n} for one nullifier in epoch ${epoch} (limit ${EPOCH_KEYS_PER_ACCOUNT})`);
+      issuesPerEpoch.set(epoch, (issuesPerEpoch.get(epoch) ?? 0) + 1);
+    } else if (e.op === OP_KEY) {
+      keys++;
+      if (!isHex(e.client_pubkey, 64) || !isEpoch(e.epoch)) continue;
+      const epoch = String(e.epoch);
+      const pk = e.client_pubkey.toLowerCase();
+      if (registered.has(pk)) violations.push(`seq=${e.seq}: pubkey ${pk.slice(0, 12)}... already registered by seq=${registered.get(pk)}`);
+      else registered.set(pk, String(e.seq));
+      const n = (keysPerEpoch.get(epoch) ?? 0) + 1;
+      keysPerEpoch.set(epoch, n);
+      if (n > (issuesPerEpoch.get(epoch) ?? 0)) violations.push(`seq=${e.seq}: KEY #${n} in epoch ${epoch} exceeds the ${issuesPerEpoch.get(epoch) ?? 0} ISSUE leaf(s) so far`);
+    } else if (e.op === 1 || e.op === 2 || e.op === 3) {
+      if (e.client_pubkey == null) {
+        unsignedVotes++;
+        continue;
+      }
+      signedVotes++;
+      if (!isHex(e.client_pubkey, 64)) continue;
+      const pk = e.client_pubkey.toLowerCase();
+      if (!registered.has(pk)) violations.push(`seq=${e.seq}: signed vote under pubkey ${pk.slice(0, 12)}... with no prior KEY leaf`);
+      const expectRef = bytesToHex(await sha256(hexToBytes(pk)));
+      if (String(e.user_ref).toLowerCase() !== expectRef) violations.push(`seq=${e.seq}: user_ref is not SHA256(client_pubkey)`);
+      let nonces = noncesPer.get(pk);
+      if (!nonces) {
+        nonces = new Set();
+        noncesPer.set(pk, nonces);
+      }
+      if (nonces.has(e.client_nonce)) violations.push(`seq=${e.seq}: nonce reused under pubkey ${pk.slice(0, 12)}... (replayed signature)`);
+      nonces.add(e.client_nonce);
+    }
+  }
+  return { violations, signedVotes, unsignedVotes, enrolls, issues, keys };
+}
+
+// RSA-PSS parameters of the blind signature (RFC 9474 RSABSSA-SHA384-PSS-Deterministic):
+// the unblinded signature verifies as an ordinary RSA-PSS signature with these.
+const BLIND_RSA_PSS = { name: "RSA-PSS", hash: "SHA-384" };
+const BLIND_RSA_SALT_LENGTH = 48;
+
+// The cryptographic halves of G and H:
+//   G. every signed vote's Ed25519 signature verifies under its pubkey over
+//      voteSignatureMessage(site, target_id, reaction, nonce);
+//   H. every KEY leaf's key_sig is a valid RSA-PSS signature under the pinned blind
+//      public key over epochKeyMessage(epoch, pubkey).
+// blindPubkeySpkiB64 empty -> H is not attempted (keysSkipped counts what was left).
+// Returns { voteViolations, keyViolations, votesChecked, keysChecked, keysSkipped }.
+export async function verifyIdentitySignatures(entries, { blindPubkeySpkiB64 } = {}, onProgress) {
+  const voteViolations = [];
+  const keyViolations = [];
+  let votesChecked = 0;
+  let keysChecked = 0;
+  let keysSkipped = 0;
+  let blindKey = null;
+  if (blindPubkeySpkiB64) {
+    blindKey = await crypto.subtle.importKey("spki", base64ToBytes(blindPubkeySpkiB64), BLIND_RSA_PSS, false, ["verify"]);
+  }
+  let done = 0;
+  for (const e of entries) {
+    done++;
+    if (isSignedVote(e)) {
+      if (!isHex(e.client_pubkey, 64) || !isHex(e.client_sig, 128)) continue; // shape: invariant A
+      votesChecked++;
+      const msg = voteSignatureMessage(e.site, e.target_id, e.reaction ?? null, e.client_nonce ?? null);
+      const ok = await verifySignature(Buffer.from(hexToBytes(e.client_pubkey)).toString("base64"), hexToBytes(e.client_sig), msg).catch(() => false);
+      if (!ok) voteViolations.push(`seq=${e.seq}: vote signature does not verify under client_pubkey ${e.client_pubkey.slice(0, 12)}...`);
+    } else if (e.op === OP_KEY) {
+      if (!isHex(e.client_pubkey, 64) || !isHex(e.key_sig, 512) || !isEpoch(e.epoch)) continue;
+      if (!blindKey) {
+        keysSkipped++;
+        continue;
+      }
+      keysChecked++;
+      const msg = epochKeyMessage(BigInt(e.epoch), hexToBytes(e.client_pubkey));
+      const ok = await crypto.subtle.verify({ ...BLIND_RSA_PSS, saltLength: BLIND_RSA_SALT_LENGTH }, blindKey, hexToBytes(e.key_sig), msg).catch(() => false);
+      if (!ok) keyViolations.push(`seq=${e.seq}: key_sig does not verify under the pinned blind key (epoch ${e.epoch}, pubkey ${e.client_pubkey.slice(0, 12)}...)`);
+    }
+    if (onProgress) onProgress(done, entries.length);
+  }
+  return { voteViolations, keyViolations, votesChecked, keysChecked, keysSkipped };
 }
 
 // Default grace for an in-progress or resumed account wipe. A wipe normally lands
@@ -422,7 +643,10 @@ export function checkWipeCompleteness(entries, tipTs, graceMs = WIPE_GRACE_MS) {
 }
 
 // Recompute a leaf hash from an /log/entries row (does NOT trust row.leaf_hash).
+// Rows written before the identity fields existed carry none of them; an absent
+// field reads as NULL, which for op 1..3 is exactly the legacy 8-field leaf.
 export function leafHashFromEntry(e) {
+  const bytesOrNull = (hex) => (hex == null ? null : hexToBytes(hex));
   if (e.op === OP_REVOKE) {
     // A revoke leaf serializes user_ref as NULL and appends revoke fields; any
     // user_ref present on the row is NOT part of the canonical bytes.
@@ -440,6 +664,29 @@ export function leafHashFromEntry(e) {
       evidenceHash: e.evidence_hash ? hexToBytes(e.evidence_hash) : null,
     });
   }
+  if (e.op === OP_ENROLL || e.op === OP_ISSUE || e.op === OP_KEY) {
+    // Identity leaves serialize every vote field as NULL; the DB's zero-sentinel
+    // user_ref on the row is not part of the bytes (same as op=4).
+    return leafHash({
+      seq: BigInt(e.seq),
+      ts: e.ts,
+      op: e.op,
+      site: null,
+      targetId: null,
+      reaction: null,
+      prevReaction: null,
+      userRef: null,
+      nullifier: e.nullifier ?? null,
+      iss: e.iss ?? null,
+      aud: e.aud ?? null,
+      kid: e.kid ?? null,
+      proof: proofBase64(e) == null ? null : base64ToBytes(proofBase64(e)),
+      saltCommitment: bytesOrNull(e.salt_commitment),
+      epoch: e.epoch == null ? 0 : BigInt(e.epoch),
+      clientPubkey: bytesOrNull(e.client_pubkey),
+      keySig: bytesOrNull(e.key_sig),
+    });
+  }
   return leafHash({
     seq: BigInt(e.seq),
     ts: e.ts,
@@ -449,5 +696,8 @@ export function leafHashFromEntry(e) {
     reaction: e.reaction,
     prevReaction: e.prev_reaction,
     userRef: e.user_ref,
+    clientPubkey: bytesOrNull(e.client_pubkey),
+    clientSig: bytesOrNull(e.client_sig),
+    clientNonce: e.client_nonce ?? null,
   });
 }

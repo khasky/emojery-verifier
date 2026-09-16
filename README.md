@@ -131,6 +131,9 @@ Every flag is listed below, and anything else is rejected with exit code `2` —
 - `--ots` (optional): also run the OpenTimestamps→Bitcoin deep audit (below). Needs `--repo`; slower and only passes after an OTS proof has matured.
 - `--btc-api <url>` (optional, with `--ots`): override the Esplora-compatible Bitcoin block-header source (default: `https://blockstream.info/api`).
 - `--ots-external <bin>` (optional, with `--ots`): also cross-check the same proof with an external OpenTimestamps CLI such as `ots`. A `.cmd`/`.bat` wrapper works on Windows too. The external tool is trusted to run: if the binary is missing or its own environment is broken (the official Python client needs a loadable OpenSSL, which it does not always find on Windows), the run FAILS — you asked for that cross-check explicitly, so it is not downgraded to a skip.
+- `--allow-unsigned-votes` (optional): admit vote leaves that carry no client signature. Votes cast by extension 1.0.0 are unsigned; while that version is still served the operator's own scheduled run passes this flag, and once the OpenID cutover retires it an unsigned vote is a failure again. Without the flag, any unsigned vote fails the `identity_structure` check.
+- `--no-proofs` (optional): skip the ENROLL proof check (`enroll_proofs`), the one check that loads `@aztec/bb.js`. Everything else in the identity section still runs. Use it for a lighter audit, or on a machine where the wasm prover will not load.
+- `--blind-pubkey <spki b64>`, `--enroll-vk-hash <hex>`, `--salt-commitment <hex>`, `--audiences <id,...>`, `--issuers <provider=iss,...>` (optional): override the identity pins in `src/verify.mjs` (see [Identity track](#identity-track-openid-enrollment-epoch-keys-signed-votes)) to verify a different deployment or fork. An `--issuers` entry whose `iss` starts with `^` is a regular expression (Microsoft's issuer carries the tenant id).
 - `--json` (optional): print one machine-readable summary (`{ result, tree_size, ts, checks, duration_sec }`) on stdout instead of the human report — used by the status job below. Human/info lines then go to stderr; the exit code is unchanged.
 - `--no-color` (optional): drop the colour. It is already off when stdout is not a terminal, when `NO_COLOR` is set, and under `--json`; `FORCE_COLOR=1` forces it back on through a pipe.
 - `--ascii` (optional): draw the report with ASCII characters only, for a console on a legacy code page where the box-drawing glyphs would be mojibake. Chosen automatically on Windows unless the environment names a UTF-8 terminal (`WT_SESSION`, `TERM`, `ConEmuANSI`).
@@ -147,10 +150,35 @@ Every flag is listed below, and anything else is rejected with exit code `2` —
 8. The published revocation list matches the revocations actually present in the log.
 9. The log is internally consistent — every entry is well-formed and no count is ever driven impossibly negative.
 10. Account wipes are complete — revocations are whole-account, so once any entry of a pseudonym is revoked, every entry of that pseudonym must be revoked. A partially revoked pseudonym is flagged, after a 48-hour grace window for wipes still in flight (`--wipe-grace-hours`).
-11. (by default, with `--repo`; `--no-rekor` to skip) the newest Rekor sidecar resolves to a real Sigstore Rekor entry carrying exactly our signed checkpoint bytes, signature, and public key. An unreachable Rekor is a skip, not a fail.
-12. (with `--ots`) the matured OpenTimestamps proof anchors the signed root in a Bitcoin block.
+11. The identity track (below): every signed vote verifies under an epoch key the log registered earlier, every registered key carries the operator's blind signature and no epoch registers more keys than it issued, every key grant cites an enrollment, and every enrollment carries a zero-knowledge proof over an OpenID provider's signed token.
+12. (by default, with `--repo`; `--no-rekor` to skip) the newest Rekor sidecar resolves to a real Sigstore Rekor entry carrying exactly our signed checkpoint bytes, signature, and public key. An unreachable Rekor is a skip, not a fail.
+13. (with `--ots`) the matured OpenTimestamps proof anchors the signed root in a Bitcoin block.
 
-Exit code `0` = PASS, `1` = FAIL. A failure means the published numbers don't match the log, or the log doesn't match its signed, anchored checkpoint — exactly what this is built to catch. It checks the **integrity** of the record; it does not, by itself, prove each reaction comes from a unique person — that is a separate concern.
+Exit code `0` = PASS, `1` = FAIL. A failure means the published numbers don't match the log, or the log doesn't match its signed, anchored checkpoint — exactly what this is built to catch. Checks 1-10 establish the **integrity** of the record; the identity track adds the bound on **who could have written it**: every counted vote traces to a key issued once per epoch to an account whose enrollment is proven against a real OpenID provider account, so the operator can inflate a count only with genuine provider accounts, and each one leaves an enrollment in the log.
+
+### Identity track: OpenID enrollment, epoch keys, signed votes
+
+Since the OpenID sign-in, the log carries three more leaf kinds and a signed tail on votes:
+
+- `op=5` — **ENROLL**: one per account. Carries the account's `nullifier` (a hash of the provider's subject under a secret salt, so the provider account is not published), the provider `iss`, the OAuth client id `aud`, the provider key id `kid`, a zero-knowledge `proof`, and the `salt_commitment` (SHA-256 of that salt).
+- `op=6` — **ISSUE**: one blind-signed epoch-key grant to an enrolled `nullifier` for one `epoch`. At most 3 per account and epoch (a second device, a reinstall).
+- `op=7` — **KEY**: one registered Ed25519 epoch public key, with the unblinded RSA-PSS signature (`key_sig`) the operator issued for it. Because the signature was blinded, the log shows *that* a key was issued, never *to whom*.
+- votes (`op=1..3`) now end in `client_pubkey || client_sig || client_nonce`, and their pseudonym is `user_ref = SHA256(client_pubkey)`. A 1.0.0 vote has none of the three and hashes as before.
+
+The four checks, and their `--json` keys:
+
+| Check | Key | What must hold |
+| --- | --- | --- |
+| structure | `identity_structure` | a signed vote names a pubkey an **earlier** KEY leaf registered, `user_ref == SHA256(pubkey)`, no nonce repeats under one key; per epoch `count(KEY) <= count(ISSUE)` and no pubkey registers twice; every ISSUE cites an earlier ENROLL, at most 3 per (nullifier, epoch); an ENROLL nullifier is unique. Unsigned votes fail here unless `--allow-unsigned-votes`. |
+| vote signatures | `vote_signatures` | every `client_sig` is a valid Ed25519 signature under `client_pubkey` over `"emojery-vote-v1" \|\| lp(site) \|\| lp(target_id) \|\| lp(reaction) \|\| lp(nonce)`. Skip while the log holds no signed vote. |
+| key signatures | `key_signatures` | every `key_sig` is a valid RSA-PSS (SHA-384, salt 48; RFC 9474 RSABSSA) signature under the pinned blind public key over `"emojery-epoch-key-v1" \|\| u64be(epoch) \|\| pubkey`. Skip while there is no KEY leaf, or no pinned blind key. |
+| enrollment proofs | `enroll_proofs` | every ENROLL `proof` verifies (UltraHonk, via `@aztec/bb.js`) under the pinned verification key `keys/enroll-v1.vk` from the log repo, with public inputs the verifier **rebuilds itself**: the provider's RSA modulus from the archived `jwks/<provider>/<kid>.json` (18 limbs of 120 bits plus its Barrett parameter, as `noir-jwt` lays them out), the leaf's `iss` and `aud` as fixed-width byte vectors, the `nullifier`, and the pinned `salt_commitment`. The `iss` must be an admitted issuer and the `aud` a pinned client id. The archived provider key is cross-checked against the provider's live JWKS: unreachable is a note, a key the provider has since rotated out is a note, a **different** modulus is a failure. `--no-proofs` skips this check. |
+
+What a passing proof establishes: the operator held an RS256 `id_token` signed by that provider's published key, naming that `iss` and `aud` and *some* subject, and the leaf's nullifier is the hash of that subject under the committed salt. It does not reveal the subject, and the verifier never sees the token. The proof is checked against a pinned verification key, so a different circuit cannot be substituted; the salt commitment is pinned, so nullifiers from two salts cannot be mixed; and the nullifier is unique per ENROLL, so one provider account enrolls once.
+
+**Pins.** Four values are pinned in `src/verify.mjs` next to the log key — `PINNED_BLIND_PUBKEY_SPKI_B64`, `PINNED_ENROLL_VK_SHA256`, `PINNED_SALT_COMMITMENT`, `PINNED_AUDIENCES` — plus the issuer list `PINNED_ISSUERS`. Until the operator publishes the OpenID material they are empty, and each check that needs one reports a **skip naming the pin** rather than a pass; the flags above override them for another deployment. The blind key is also published as `keys/blind-rsa-v1.json` in the log repo and the verification-key metadata (`bb` version, salt commitment, public-input layout) as `keys/enroll-v1.json`.
+
+**Dependency.** The proof check is the one place this tool needs more than `@noble/ed25519`: `@aztec/bb.js` is pinned to an exact version (the same `bb` the operator proves with, recorded in `keys/enroll-v1.json`; a drift is reported next to the check). It is imported lazily, so a run with `--no-proofs`, or a log with no ENROLL leaf yet, never loads it. On first use it downloads the BN254 structured reference string into `~/.bb-crs` (a few MB, from the Aztec CDN) and takes about ten seconds to initialise the wasm prover; `pnpm install --ignore-scripts` is enough (its native optional, `msgpackr-extract`, has a pure-JS fallback).
 
 ### Revocations and account deletion
 
@@ -206,6 +234,8 @@ The job is a matrix over the deployments it watches, and each one signs its own 
 
 A repository-level value does not resolve here — the workflow reads `vars.LOG_PUBKEY` inside an `environment:`, so a repo variable arrives empty and the run stops with `--pubkey needs a value` rather than quietly falling back to the pinned production key.
 
+The identity pins ride the same way, as optional environment **variables** — `BLIND_PUBKEY_SPKI`, `ENROLL_VK_SHA256`, `SALT_COMMITMENT`, `OIDC_AUDIENCES`, `OIDC_ISSUERS` — passed as flags only when set (staging signs and proves under its own material, and adds its test issuer to `OIDC_ISSUERS`). Both targets currently run with `--allow-unsigned-votes`, the compatibility window for extension 1.0.0; the flag comes off at the cutover.
+
 The job runs without `--ots` — OpenTimestamps matures over days, and the status page tracks the Bitcoin anchor separately — so a young log isn't reported as failing.
 
 ### Fork and audit
@@ -218,7 +248,7 @@ You don't need the ingest secret to become an independent watcher: **fork this r
 pnpm selftest
 ```
 
-Runs `src/revoke.selftest.mjs`, `src/ots.selftest.mjs`, `src/archive.selftest.mjs`, and `src/revocations.selftest.mjs` — offline checks of the revocation/`op=4` counter-folding logic, the dependency-clean OTS verifier, the checkpoint-archive replay primitive, the hash-chain replay, the checkpoint an offline run picks when the entries shards trail the tip, the per-day aggregates derived from the entries, and the HTTP layer (revocation paging, shard-tail fill, rate-limit retry) against a stubbed `fetch`. No network, synthetic fixtures throughout. Exit `0` = PASS.
+Runs `src/revoke.selftest.mjs`, `src/ots.selftest.mjs`, `src/archive.selftest.mjs`, `src/revocations.selftest.mjs`, and `src/identity.selftest.mjs` — offline checks of the revocation/`op=4` counter-folding logic, the dependency-clean OTS verifier, the checkpoint-archive replay primitive, the hash-chain replay, the checkpoint an offline run picks when the entries shards trail the tip, the per-day aggregates derived from the entries, the HTTP layer (revocation paging, shard-tail fill, rate-limit retry) against a stubbed `fetch`, and the identity track (the pinned `op=5/6/7` and signed-vote byte vectors shared with the backend, invariants G/H/I, the Ed25519 and blind RSA-PSS checks on freshly generated keys, the `noir-jwt` public-input layout, and the proof driver's skip and failure paths against stubbed fetchers). No network, synthetic fixtures throughout; `@aztec/bb.js` is not loaded. Exit `0` = PASS.
 
 Example result:
 

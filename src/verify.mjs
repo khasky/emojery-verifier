@@ -8,6 +8,9 @@
 //     [--pubkey <base64 raw Ed25519>] \
 //     [--wipe-grace-hours 48] [--max-checkpoint-age-hours 168] [--stats] [--counters] \
 //     [--no-rekor] [--ots] [--btc-api <Esplora base>] [--ots-external <bin>] [--json]
+//     [--allow-unsigned-votes] [--no-proofs] [--blind-pubkey <SPKI b64>]
+//     [--enroll-vk-hash <sha256 hex>] [--salt-commitment <sha256 hex>]
+//     [--issuers provider=iss,...] [--audiences client_id,...]
 //     [--no-color] [--ascii]
 //
 // --entries repo reads the raw leaves from the log repo's public
@@ -57,6 +60,14 @@
 //   5. structural consistency of the log (well-formed entries, no impossible
 //      negative counts) + /log/revocations matches the log + account-wipe
 //      completeness (a pseudonym partially revoked is flagged; --wipe-grace-hours)
+//   5c. identity track (op 5..7 and signed votes): every signed vote names a key an
+//       earlier KEY leaf registered and verifies under it (G); every KEY leaf carries a
+//       valid blind RSA-PSS signature under the pinned blind key and no epoch registers
+//       more keys than it issued (H); every ISSUE cites an earlier ENROLL, at most three
+//       per epoch (I); every ENROLL proof verifies under the pinned verification key with
+//       public inputs rebuilt from the leaf and the archived provider key (J, via
+//       @aztec/bb.js; --no-proofs skips it). An unsigned vote is admitted only under
+//       --allow-unsigned-votes (the 1.0.0 compatibility window).
 //   6. (if --ots) deep audit: the matured OpenTimestamps proof anchors the signed
 //      checkpoint root in a Bitcoin block. Network-bound, so opt-in; needs
 //      --repo and an Esplora-compatible block-header source.
@@ -67,12 +78,15 @@
 // numbers rather than quoting ours.
 //
 // Exit code 0 = PASS, 1 = FAIL. The core checks need only @noble/ed25519;
-// --ots is dependency-clean and uses only Node built-ins.
+// --ots is dependency-clean and uses only Node built-ins; the ENROLL proof check
+// (5c/J) is the one place @aztec/bb.js is loaded.
 
+import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import {
   bytesToHex,
   checkHashChain,
+  checkIdentityInvariants,
   checkStructuralInvariants,
   checkWipeCompleteness,
   dailyAggregates,
@@ -84,14 +98,36 @@ import {
   sha256,
   splitCounterKey,
   sthBytes,
+  verifyIdentitySignatures,
   verifySignature,
   verifySth,
 } from "./transparency.mjs";
+import { DEFAULT_ISSUERS, parseIssuersFlag, parseListFlag, verifyEnrollProofs } from "./identity.mjs";
 import { runExternalOts, verifyDetachedOtsProof } from "./ots-bitcoin.mjs";
 import { beginAudit, detail, ELL, flush, mark, out, phase, raw, section, verdict } from "./report.mjs";
 
 // The published Emojery log signing key (base64 raw Ed25519). Pinned so --pubkey is optional.
 const PINNED_PUBKEY_B64 = "XeLiQ5CMhsjLmnQbIWSwWHNjcJg01Zs0veQDiwluT6c=";
+
+// Identity-track pins (check 5c). Each is published by the operator once the OpenID
+// sign-in ships; until then it is empty and the check that needs it reports a skip
+// naming the pin. A fork verifying another deployment overrides them with the flags.
+//   PINNED_BLIND_PUBKEY_SPKI_B64 — the RSA-2048 blind-signing public key (SPKI, base64),
+//     also published as keys/blind-rsa-v1.json in the log repo; the H signature check.
+//   PINNED_ENROLL_VK_SHA256 — SHA-256 of keys/enroll-v1.vk, the UltraHonk verification
+//     key of the ENROLL circuit; the J proof check.
+//   PINNED_SALT_COMMITMENT — SHA-256 of the operator's nullifier salt; a public input
+//     of every ENROLL proof.
+//   PINNED_AUDIENCES — the OAuth client ids the id_tokens were minted for.
+const PINNED_BLIND_PUBKEY_SPKI_B64 = "";
+const PINNED_ENROLL_VK_SHA256 = "";
+const PINNED_SALT_COMMITMENT = "";
+const PINNED_AUDIENCES = [];
+const PINNED_ISSUERS = DEFAULT_ISSUERS;
+
+// The bb.js version this verifier is pinned to (package.json); keys/enroll-v1.json
+// records the bb the operator proved with, and a drift between the two is reported.
+const BB_JS_VERSION = createRequire(import.meta.url)("../package.json").dependencies["@aztec/bb.js"];
 
 // The Sigstore Rekor instance the checkpoint's independent witness lives in. PINNED, not
 // read from the sidecar under test: a compromised log repo could otherwise point the
@@ -111,10 +147,25 @@ const DEFAULT_SHARD_SIZE = 10_000;
 // a typo used to be accepted in silence, so `--targett site/id` (or any flag this
 // build does not have) quietly ran a SMALLER audit and still printed PASS. An audit
 // tool that answers a question it was not asked is worse than one that refuses.
-const VALUE_FLAGS = new Set(["--api", "--repo", "--entries", "--shard-size", "--pubkey", "--wipe-grace-hours", "--max-checkpoint-age-hours", "--btc-api", "--ots-external"]);
-const BARE_FLAGS = new Set(["--stats", "--counters", "--json", "--rekor", "--no-rekor", "--ots", "--no-color", "--ascii"]);
+const VALUE_FLAGS = new Set([
+  "--api",
+  "--repo",
+  "--entries",
+  "--shard-size",
+  "--pubkey",
+  "--wipe-grace-hours",
+  "--max-checkpoint-age-hours",
+  "--btc-api",
+  "--ots-external",
+  "--blind-pubkey",
+  "--enroll-vk-hash",
+  "--salt-commitment",
+  "--issuers",
+  "--audiences",
+]);
+const BARE_FLAGS = new Set(["--stats", "--counters", "--json", "--rekor", "--no-rekor", "--ots", "--allow-unsigned-votes", "--no-proofs", "--no-color", "--ascii", "--help"]);
 const USAGE =
-  "usage: node src/verify.mjs --api <url> [--repo <raw base>] [--entries api|repo] [--shard-size <n>] [--pubkey <b64>] [--wipe-grace-hours <n>] [--max-checkpoint-age-hours <n>] [--stats] [--counters] [--no-rekor] [--ots] [--btc-api <url>] [--ots-external <bin>] [--json] [--no-color] [--ascii]";
+  "usage: node src/verify.mjs --api <url> [--repo <raw base>] [--entries api|repo] [--shard-size <n>] [--pubkey <b64>] [--wipe-grace-hours <n>] [--max-checkpoint-age-hours <n>] [--stats] [--counters] [--no-rekor] [--ots] [--btc-api <url>] [--ots-external <bin>] [--allow-unsigned-votes] [--no-proofs] [--blind-pubkey <spki b64>] [--enroll-vk-hash <hex>] [--salt-commitment <hex>] [--issuers provider=iss,...] [--audiences id,...] [--json] [--no-color] [--ascii]";
 
 function arg(name) {
   const i = process.argv.indexOf(name);
@@ -184,6 +235,12 @@ export async function emptyLog(api) {
   if (res.status !== 404) return false;
   const body = await res.json().catch(() => null);
   return body?.error === "no_checkpoint";
+}
+
+async function getBytes(url) {
+  const res = await getRes(url);
+  if (!res.ok) throw new Error(`GET ${url} -> ${res.status}`);
+  return new Uint8Array(await res.arrayBuffer());
 }
 
 async function getText(url) {
@@ -756,10 +813,36 @@ async function main() {
   // opts out. `--rekor` is still accepted as an explicit no-op for back-compat.
   const rekorDisabled = process.argv.includes("--no-rekor");
   const maxAgeHours = Number(arg("--max-checkpoint-age-hours") ?? "168");
+  const allowUnsignedVotes = process.argv.includes("--allow-unsigned-votes");
+  const proofsDisabled = process.argv.includes("--no-proofs");
+  const blindPubkey = arg("--blind-pubkey") ?? PINNED_BLIND_PUBKEY_SPKI_B64;
+  const enrollVkHash = arg("--enroll-vk-hash") ?? PINNED_ENROLL_VK_SHA256;
+  const saltCommitment = arg("--salt-commitment") ?? PINNED_SALT_COMMITMENT;
+  const audiences = arg("--audiences") ? parseListFlag(arg("--audiences")) : PINNED_AUDIENCES;
+  if (process.argv.includes("--help")) {
+    console.log(USAGE);
+    return;
+  }
   const badArgs = argvErrors();
   if (badArgs.length) {
     console.error(`${badArgs.join("; ")}\n${USAGE}`);
     process.exit(2);
+  }
+  let issuers = PINNED_ISSUERS;
+  try {
+    if (arg("--issuers")) issuers = parseIssuersFlag(arg("--issuers"));
+  } catch (e) {
+    console.error(e.message);
+    process.exit(2);
+  }
+  for (const [flag, value] of [
+    ["--enroll-vk-hash", enrollVkHash],
+    ["--salt-commitment", saltCommitment],
+  ]) {
+    if (value && !/^[0-9a-f]{64}$/i.test(value)) {
+      console.error(`${flag} needs a 64-hex SHA-256`);
+      process.exit(2);
+    }
   }
   if (!Number.isFinite(maxAgeHours) || maxAgeHours < 0) {
     console.error("--max-checkpoint-age-hours needs a non-negative number (0 disables)");
@@ -1046,6 +1129,58 @@ async function main() {
     `account wipes are complete (${wipe.length} violation(s); grace ${wipeGraceHours}h)`,
     "wipe_completeness",
   );
+
+  section("Identity");
+
+  // 5c. the identity track. Structure first (G/H/I over the entries alone), then the
+  //     two signature checks, then the ENROLL proofs. An unsigned vote is a 1.0.0
+  //     leaf: admitted while the compatibility window is open, a failure after it.
+  const identity = await checkIdentityInvariants(entries);
+  out(`identity: ${identity.enrolls} enroll, ${identity.issues} issue, ${identity.keys} key leaf(s); ${identity.signedVotes} signed and ${identity.unsignedVotes} unsigned vote(s)`);
+  for (const v of identity.violations.slice(0, 20)) detail(v);
+  if (identity.violations.length > 20) detail(`${ELL}and ${identity.violations.length - 20} more`);
+  check(identity.violations.length === 0, `identity invariants hold (${identity.violations.length} violation(s))`, "identity_structure");
+  if (identity.unsignedVotes > 0 && !allowUnsignedVotes) {
+    check(false, `${identity.unsignedVotes} vote(s) carry no client signature (pass --allow-unsigned-votes while 1.0.0 clients are served)`, "identity_structure");
+  }
+
+  const signing = phase("verifying vote and key signatures");
+  const sigs = await verifyIdentitySignatures(entries, { blindPubkeySpkiB64: blindPubkey }, (done, total) => signing.tick(done, total));
+  signing.end(entries.length, entries.length);
+  for (const v of sigs.voteViolations.slice(0, 10)) detail(v);
+  if (sigs.voteViolations.length > 10) detail(`${ELL}and ${sigs.voteViolations.length - 10} more`);
+  if (sigs.votesChecked === 0) skipCheck("vote signatures (no signed votes in the log yet)", "vote_signatures");
+  else check(sigs.voteViolations.length === 0, `every signed vote verifies under its epoch key (${sigs.votesChecked} checked, ${sigs.voteViolations.length} bad)`, "vote_signatures");
+  for (const v of sigs.keyViolations.slice(0, 10)) detail(v);
+  if (sigs.keyViolations.length > 10) detail(`${ELL}and ${sigs.keyViolations.length - 10} more`);
+  if (identity.keys === 0) skipCheck("epoch-key signatures (no KEY leaves in the log yet)", "key_signatures");
+  else if (!blindPubkey) skipCheck(`epoch-key signatures (${sigs.keysSkipped} KEY leaf(s), no pinned blind key: set PINNED_BLIND_PUBKEY_SPKI_B64 or pass --blind-pubkey)`, "key_signatures");
+  else check(sigs.keyViolations.length === 0, `every KEY leaf carries a valid blind RSA-PSS signature (${sigs.keysChecked} checked, ${sigs.keyViolations.length} bad)`, "key_signatures");
+
+  if (proofsDisabled) {
+    skipCheck("ENROLL proofs (--no-proofs)", "enroll_proofs");
+  } else {
+    let proving = null; // started on the first proof, so a log without ENROLL leaves shows no empty bar
+    const proofs = await verifyEnrollProofs(entries, {
+      repo,
+      getJson,
+      getBytes,
+      vkSha256: enrollVkHash,
+      saltCommitment,
+      issuers,
+      audiences,
+      bbVersion: BB_JS_VERSION,
+      onProgress: (done, total) => {
+        proving ??= phase("verifying ENROLL proofs");
+        proving.tick(done, total);
+      },
+    });
+    proving?.end(proofs.checked, proofs.checked);
+    for (const n of proofs.notes.slice(0, 20)) detail(n);
+    if (proofs.notes.length > 20) detail(`${ELL}and ${proofs.notes.length - 20} more`);
+    if (proofs.status === "skip") skipCheck(`ENROLL proofs (${proofs.reason})`, "enroll_proofs");
+    else check(proofs.status === "pass", `every ENROLL proof verifies under the pinned verification key (${proofs.reason})`, "enroll_proofs");
+  }
 
   // 6. optional OpenTimestamps → Bitcoin deep audit.
   if (ots) {

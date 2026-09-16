@@ -12,6 +12,21 @@
 # the environments, not as a single repo-level value. Leaving them repo-level (or as a
 # repo `Secret` for LOG_PUBKEY, which the workflow reads via `vars.`) resolves to empty.
 #
+# Identity-track pins (all optional, all public, all per environment — staging signs
+# blind grants and proves enrollments under its own material, which must not fall back
+# to the production values pinned in verify.mjs):
+#   - Variable  BLIND_PUBKEY_SPKI  — the blind-signing RSA public key (SPKI, base64).
+#   - Variable  ENROLL_VK_SHA256   — SHA-256 of keys/enroll-v1.vk in that env's log repo.
+#   - Variable  SALT_COMMITMENT    — SHA-256 of that env's nullifier salt.
+#   - Variable  OIDC_AUDIENCES     — comma-separated OAuth client ids of that env.
+#   - Variable  OIDC_ISSUERS       — comma-separated provider=iss pairs; staging adds its
+#                                    test issuer here. Empty keeps the verifier's default list.
+# An empty variable leaves the flag off, and the check that needs it reports a skip.
+#
+# --allow-unsigned-votes stays on both targets while 1.0.0 clients (no vote signature)
+# are still served; it comes off at the OTP cutover, when an unsigned vote becomes a
+# failure again.
+#
 # Note: --ots is intentionally omitted. OpenTimestamps matures over hours–days, so a
 # young log has no Bitcoin proof yet and --ots would report FAIL; the Bitcoin component
 # is derived separately (and leniently) by the backend. This job covers the core
@@ -53,6 +68,11 @@ jobs:
       REPO: ${{ matrix.repo }}
       LOG_PUBKEY: ${{ vars.LOG_PUBKEY }}
       STATUS_INGEST_KEY: ${{ secrets.STATUS_INGEST_KEY }}
+      BLIND_PUBKEY_SPKI: ${{ vars.BLIND_PUBKEY_SPKI }}
+      ENROLL_VK_SHA256: ${{ vars.ENROLL_VK_SHA256 }}
+      SALT_COMMITMENT: ${{ vars.SALT_COMMITMENT }}
+      OIDC_AUDIENCES: ${{ vars.OIDC_AUDIENCES }}
+      OIDC_ISSUERS: ${{ vars.OIDC_ISSUERS }}
     steps:
       - uses: actions/checkout@v7
 
@@ -63,8 +83,9 @@ jobs:
           node-version: 24
 
       # Reproducible install: honor the committed lockfile, and skip dependency
-      # lifecycle scripts (the only dep is @noble/ed25519 — pure JS, no build), so a
-      # compromised transitive postinstall can't run with the job's secrets in scope.
+      # lifecycle scripts, so a compromised transitive postinstall can't run with the
+      # job's secrets in scope. @noble/ed25519 is pure JS; @aztec/bb.js ships its wasm
+      # prebuilt and its one native optional (msgpackr-extract) has a pure-JS fallback.
       - run: pnpm install --frozen-lockfile --ignore-scripts
 
       # A missing key would reach the verifier as `--pubkey ""`, which it now refuses;
@@ -91,7 +112,15 @@ jobs:
           # against the API's per-IP /log/* limit from a shared runner IP. --api stays
           # on, so the checkpoint, the revocation comparison and the 3d entries
           # cross-check still exercise the live endpoints.
-          node src/verify.mjs --json --api "$API" --repo "$REPO" --entries repo --pubkey "$LOG_PUBKEY" > result.json
+          # Identity pins ride in as flags only when the environment sets them: the
+          # verifier refuses an empty value, and a skip names the missing pin.
+          pins=()
+          [ -n "$BLIND_PUBKEY_SPKI" ] && pins+=(--blind-pubkey "$BLIND_PUBKEY_SPKI")
+          [ -n "$ENROLL_VK_SHA256" ] && pins+=(--enroll-vk-hash "$ENROLL_VK_SHA256")
+          [ -n "$SALT_COMMITMENT" ] && pins+=(--salt-commitment "$SALT_COMMITMENT")
+          [ -n "$OIDC_AUDIENCES" ] && pins+=(--audiences "$OIDC_AUDIENCES")
+          [ -n "$OIDC_ISSUERS" ] && pins+=(--issuers "$OIDC_ISSUERS")
+          node src/verify.mjs --json --api "$API" --repo "$REPO" --entries repo --pubkey "$LOG_PUBKEY" --allow-unsigned-votes "${pins[@]}" > result.json
           code=$?
           set -e
           # If the verifier crashed before emitting JSON, synthesize an explicit fail so
