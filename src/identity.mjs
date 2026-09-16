@@ -14,7 +14,7 @@ import { base64ToBytes, bytesToHex, hexToBytes, OP_ENROLL, proofBase64, sha256, 
 
 // The circuit's RSA parameters as noir-jwt (v0.5.1) lays them out: an RSA-2048 value is
 // 18 little-endian limbs of 120 bits, and the Barrett reduction parameter is
-// floor(2^(2*2048+4) / n). Every limb is one public-input field.
+// floor(2^(2*2048+6) / n). Every limb is one public-input field.
 export const RSA_BITS = 2048;
 export const LIMB_BITS = 120;
 export const LIMB_COUNT = 18;
@@ -75,7 +75,7 @@ export function splitLimbs(n, bits = LIMB_BITS, count = LIMB_COUNT) {
 }
 
 export function redcParam(n) {
-  return (1n << (2n * BigInt(RSA_BITS) + 4n)) / n;
+  return (1n << (2n * BigInt(RSA_BITS) + 6n)) / n;
 }
 
 // One public input as bb.js takes it: a 0x-prefixed 32-byte big-endian field.

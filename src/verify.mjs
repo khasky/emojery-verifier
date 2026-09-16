@@ -120,7 +120,7 @@ const PINNED_PUBKEY_B64 = "XeLiQ5CMhsjLmnQbIWSwWHNjcJg01Zs0veQDiwluT6c=";
 //     of every ENROLL proof.
 //   PINNED_AUDIENCES — the OAuth client ids the id_tokens were minted for.
 const PINNED_BLIND_PUBKEY_SPKI_B64 = "";
-const PINNED_ENROLL_VK_SHA256 = "";
+const PINNED_ENROLL_VK_SHA256 = "fdb551a27a6f13a18a60c668a5dfd4ea59cf23bde136827c73b7a34676d15e72";
 const PINNED_SALT_COMMITMENT = "";
 const PINNED_AUDIENCES = [];
 const PINNED_ISSUERS = DEFAULT_ISSUERS;

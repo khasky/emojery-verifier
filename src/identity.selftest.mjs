@@ -170,7 +170,7 @@ const modulus = (1n << 2047n) | 0x1234567890abcdefn | (0xabcn << 1000n);
 const limbs = splitLimbs(modulus);
 check(limbs.length === 18 && limbs.every((l) => l < 1n << 120n), "limbs: 18 limbs of at most 120 bits");
 check(limbs.reduce((acc, l, i) => acc | (l << (120n * BigInt(i))), 0n) === modulus, "limbs: little-endian 120-bit split reassembles the modulus");
-check(redcParam(modulus) === (1n << 4100n) / modulus, "redc = floor(2^(2*2048+4) / n), as noir-jwt's generateInputs computes it");
+check(redcParam(modulus) === (1n << 4102n) / modulus, "redc = floor(2^(2*2048+6) / n), as noir-bignum v0.10 reduces");
 check(fieldHex(255n) === `0x${"0".repeat(62)}ff`, "fieldHex: 32-byte big-endian field");
 const inputs = enrollPublicInputs({ modulus, iss: ISS, aud: AUD, nullifierHex: nullifier, saltCommitmentHex: bytesToHex(saltCommitment) });
 check(inputs.length === PUBLIC_INPUT_COUNT && PUBLIC_INPUT_COUNT === 326, "public inputs: 18+18+97+129+32+32 = 326 fields");
