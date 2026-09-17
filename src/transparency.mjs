@@ -516,7 +516,7 @@ export async function checkIdentityInvariants(entries, { keysPerAccount = EPOCH_
       const k = `${e.nullifier}\x00${epoch}`;
       const n = (issuesPer.get(k) ?? 0) + 1;
       issuesPer.set(k, n);
-      if (n > keysPerAccount) violations.push(`seq=${e.seq}: ISSUE #${n} for one nullifier in epoch ${epoch} (limit ${keysPerAccount})`);
+      if (keysPerAccount > 0 && n > keysPerAccount) violations.push(`seq=${e.seq}: ISSUE #${n} for one nullifier in epoch ${epoch} (limit ${keysPerAccount})`);
       issuesPerEpoch.set(epoch, (issuesPerEpoch.get(epoch) ?? 0) + 1);
     } else if (e.op === OP_KEY) {
       keys++;

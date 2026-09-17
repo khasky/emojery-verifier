@@ -66,7 +66,8 @@
 //       more keys than it issued (H); every ISSUE cites an earlier ENROLL of the same
 //       (nullifier, account_pubkey) pair, is signed by that account key, carries a unique
 //       blinded_hash, and no (nullifier, epoch) holds more than --keys-per-account of
-//       them (I); every ENROLL proof verifies under the pinned verification key with
+//       them (I; 0 lifts that bound - it is a growth policy, not a trust property,
+//       since every grant carries the account's own signature); every ENROLL proof verifies under the pinned verification key with
 //       public inputs rebuilt from the leaf and the archived provider key (J, via
 //       @aztec/bb.js; --no-proofs skips it). An unsigned vote is admitted only under
 //       --allow-unsigned-votes (the 1.0.0 compatibility window).
@@ -851,8 +852,8 @@ async function main() {
       process.exit(2);
     }
   }
-  if (!Number.isInteger(keysPerAccount) || keysPerAccount < 1) {
-    console.error("--keys-per-account needs a positive integer");
+  if (!Number.isInteger(keysPerAccount) || keysPerAccount < 0) {
+    console.error("--keys-per-account needs a non-negative integer (0 = no bound)");
     process.exit(2);
   }
   if (!Number.isFinite(maxAgeHours) || maxAgeHours < 0) {

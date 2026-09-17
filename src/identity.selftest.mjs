@@ -163,6 +163,8 @@ check(EPOCH_KEYS_PER_ACCOUNT === 10, "the default --keys-per-account is 10");
 await flagged(elevenIssues, `limit ${EPOCH_KEYS_PER_ACCOUNT}`);
 const raised = await checkIdentityInvariants(elevenIssues, { keysPerAccount: EPOCH_KEYS_PER_ACCOUNT + 1 });
 check(raised.violations.length === 0, `identity invariants: the ${EPOCH_KEYS_PER_ACCOUNT + 1}th ISSUE passes under --keys-per-account ${EPOCH_KEYS_PER_ACCOUNT + 1}`);
+const unbounded = await checkIdentityInvariants(elevenIssues, { keysPerAccount: 0 });
+check(unbounded.violations.length === 0, "identity invariants: --keys-per-account 0 lifts the per-epoch grant bound");
 await flagged([enrollRow(1, nullifier), issueRow(2, nullifier), keyRow(3, bytesToHex(PUBKEY)), keyRow(4, PK2)], "exceeds the 1 ISSUE");
 await flagged([enrollRow(1, nullifier), issueRow(2, nullifier), issueRow(3, nullifier), keyRow(4, bytesToHex(PUBKEY)), keyRow(5, bytesToHex(PUBKEY))], "already registered");
 await flagged([voteRow(1, bytesToHex(PUBKEY), userRef, "n1")], "no prior KEY");

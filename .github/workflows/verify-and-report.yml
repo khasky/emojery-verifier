@@ -73,6 +73,7 @@ jobs:
       SALT_COMMITMENT: ${{ vars.SALT_COMMITMENT }}
       OIDC_AUDIENCES: ${{ vars.OIDC_AUDIENCES }}
       OIDC_ISSUERS: ${{ vars.OIDC_ISSUERS }}
+      KEYS_PER_ACCOUNT: ${{ vars.KEYS_PER_ACCOUNT }}
     steps:
       - uses: actions/checkout@v7
 
@@ -120,6 +121,9 @@ jobs:
           [ -n "$SALT_COMMITMENT" ] && pins+=(--salt-commitment "$SALT_COMMITMENT")
           [ -n "$OIDC_AUDIENCES" ] && pins+=(--audiences "$OIDC_AUDIENCES")
           [ -n "$OIDC_ISSUERS" ] && pins+=(--issuers "$OIDC_ISSUERS")
+          # KEYS_PER_ACCOUNT=0 lifts the per-epoch grant bound where a shared test
+          # account legitimately holds more keys than one person would.
+          [ -n "$KEYS_PER_ACCOUNT" ] && pins+=(--keys-per-account "$KEYS_PER_ACCOUNT")
           node src/verify.mjs --json --api "$API" --repo "$REPO" --entries repo --pubkey "$LOG_PUBKEY" --allow-unsigned-votes "${pins[@]}" > result.json
           code=$?
           set -e
