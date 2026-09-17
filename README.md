@@ -122,7 +122,28 @@ The shards are published in batches, so an offline run audits the newest publish
 
 ### Watch the log yourself
 
-`.github/workflows/verify-and-report.yml` runs the verifier daily against production and staging and reports the verdict to the status page at `emojery.app/status`. Fork this repository, enable Actions on the fork, and set the environment **variable** `LOG_PUBKEY` (Settings → Environments → `production` / `staging`; a repository-level value arrives empty inside an `environment:` job) to run the same verification on infrastructure the operator does not control. The report step skips without the `STATUS_INGEST_KEY` secret; a failed verification fails the job, so a red run in your fork's history means the log did not verify. The optional variables `BLIND_PUBKEY_SPKI`, `ENROLL_VK_SHA256`, `SALT_COMMITMENT`, `OIDC_AUDIENCES`, `OIDC_ISSUERS` and `KEYS_PER_ACCOUNT` ride in as the matching flags when set. The job runs without `--ots`, since a young checkpoint has no matured Bitcoin proof yet.
+The operator runs this tool daily and posts the verdict to the status page at [emojery.app/status](https://emojery.app/status). Anyone can run the same verification on a schedule of their own, so the verdict does not depend on the operator's timer. A minimal GitHub Actions job for a fork:
+
+```yaml
+on:
+  schedule:
+    - cron: "0 4 * * *"
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: |
+          node src/verify.mjs --json --allow-unsigned-votes \
+            --api https://api.emojery.app \
+            --repo https://raw.githubusercontent.com/khasky/emojery-log/main > result.json
+          cat result.json
+          [ "$(node -p "require('./result.json').result")" = pass ] || exit 1
+```
+
+A red run means the log did not verify; `result.json` names the check. The job runs without `--ots`, since a young checkpoint has no matured Bitcoin proof yet.
 
 ## How it works
 

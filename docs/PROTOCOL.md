@@ -159,9 +159,9 @@ The verifier reads `ots/latest.json`, `ots/<tree_size>.json` and `ots/<tree_size
 
 `--ots-external <bin>` additionally runs `<bin> verify -d <root_hash> <proof.ots>` (the official Python client as `ots`; a `.cmd`/`.bat` wrapper works on Windows). A missing binary or a broken environment (the Python client needs a loadable OpenSSL, which it does not always find on Windows) fails the run, since the cross-check was asked for explicitly.
 
-## Status reporting
+## Machine-readable output
 
-`.github/workflows/verify-and-report.yml` runs `node src/verify.mjs --json --entries repo --allow-unsigned-votes ...` daily and on demand against each deployment, and POSTs the JSON verdict to that deployment's `POST /status/ingest` under an idempotency key; the status page renders it as "Independent verification". The log key and the ingest secret are per GitHub environment (`production`, `staging`), since each deployment signs its own log. Under `--json` the human lines go to stderr as flat `PASS  msg` text and stdout carries the one JSON object, also on a crash (`{ result: "fail", error, checks }`).
+`--json` is the shape an automated caller consumes (the operator's scheduled run, a fork's own): the human lines go to stderr as flat `PASS  msg` text and stdout carries the one JSON object, also on a crash (`{ result: "fail", error, checks }`).
 
 ## Known-answer tests
 
