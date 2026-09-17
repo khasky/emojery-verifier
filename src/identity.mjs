@@ -3,9 +3,11 @@
 // id_token, signed by the OpenID provider's published key, named the leaf's iss and
 // aud and a private sub, and that the leaf's nullifier is
 //   SHA256("emojery-nullifier-v1" || lp(iss) || lp(sub) || lp(aud) || salt)
-// for the salt whose SHA256 is the pinned salt_commitment. The proof is checked
-// against the pinned verification key with public inputs this file rebuilds from the
-// leaf, the archived provider key and the pins — nothing in the proof is trusted.
+// for the salt whose SHA256 is the pinned salt_commitment, and that the token's nonce
+// commits to the leaf's account_pubkey (so the account key was chosen by whoever held
+// the token, before the provider signed it). The proof is checked against the pinned
+// verification key with public inputs this file rebuilds from the leaf, the archived
+// provider key and the pins — nothing in the proof is trusted.
 //
 // The prover is @aztec/bb.js, imported lazily: the rest of the audit stays on
 // @noble/ed25519 alone, and --no-proofs skips this file entirely.
@@ -21,11 +23,22 @@ export const LIMB_COUNT = 18;
 // BoundedVec capacities of the circuit's public iss/aud (prover/circuit/src/main.nr).
 export const ISS_MAX = 96;
 export const AUD_MAX = 128;
-// modulus[18] || redc[18] || iss[96] || iss_len || aud[128] || aud_len || nullifier[32] || salt_commitment[32]
-export const PUBLIC_INPUT_COUNT = LIMB_COUNT * 2 + ISS_MAX + 1 + AUD_MAX + 1 + 32 + 32;
+// modulus[18] || redc[18] || iss[96] || iss_len || aud[128] || aud_len || nullifier[32] || salt_commitment[32] || account_pubkey[32]
+export const PUBLIC_INPUT_COUNT = LIMB_COUNT * 2 + ISS_MAX + 1 + AUD_MAX + 1 + 32 + 32 + 32;
 
 export const VK_PATH = "keys/enroll-v1.vk";
 export const VK_META_PATH = "keys/enroll-v1.json";
+// The value PINNED_ENROLL_VK_SHA256 holds until the operator publishes the rebuilt
+// circuit's key; a run that reaches the proof check with it must fail, not skip.
+export const ENROLL_VK_PLACEHOLDER = "REPLACE_WITH_ENROLL_V2_VK_SHA256";
+
+// keys/enroll-v1.json may declare the public-input layout (a space-separated string
+// or an array). This verifier feeds account_pubkey as the last 32 fields, so a layout
+// that ends anywhere else describes a different circuit.
+export function publicInputsLayoutEndsWithAccountPubkey(layout) {
+  const tokens = Array.isArray(layout) ? layout.map(String) : String(layout).trim().split(/\s+/);
+  return /^account_pubkey(\[32\])?$/.test(tokens[tokens.length - 1] ?? "");
+}
 
 // The OpenID issuers the log admits. Microsoft's iss carries the tenant id, so it is a
 // pattern; the rest are exact. --issuers replaces the list (provider=iss, comma-separated;
@@ -111,7 +124,7 @@ function boundedVecFields(text, max) {
   return out;
 }
 
-export function enrollPublicInputs({ modulus, iss, aud, nullifierHex, saltCommitmentHex }) {
+export function enrollPublicInputs({ modulus, iss, aud, nullifierHex, saltCommitmentHex, accountPubkeyHex }) {
   const out = [];
   for (const limb of splitLimbs(modulus)) out.push(fieldHex(limb));
   for (const limb of splitLimbs(redcParam(modulus))) out.push(fieldHex(limb));
@@ -119,6 +132,7 @@ export function enrollPublicInputs({ modulus, iss, aud, nullifierHex, saltCommit
   out.push(...boundedVecFields(aud, AUD_MAX));
   for (const b of hexToBytes(nullifierHex)) out.push(fieldHex(b));
   for (const b of hexToBytes(saltCommitmentHex)) out.push(fieldHex(b));
+  for (const b of hexToBytes(accountPubkeyHex)) out.push(fieldHex(b));
   if (out.length !== PUBLIC_INPUT_COUNT) throw new Error(`public input count ${out.length} != ${PUBLIC_INPUT_COUNT}`);
   return out;
 }
@@ -150,6 +164,7 @@ export async function verifyEnrollProofs(entries, { repo, getJson, getBytes, vkS
   if (enrolls.length === 0) return result("skip", "no ENROLL leaves in the log yet");
   if (!repo) return result("skip", "needs --repo (the verification key and the archived provider keys live in the log repo)");
   if (!vkSha256) return result("skip", "no pinned verification-key hash (PINNED_ENROLL_VK_SHA256 / --enroll-vk-hash)");
+  if (vkSha256 === ENROLL_VK_PLACEHOLDER) return result("fail", `PINNED_ENROLL_VK_SHA256 is still the placeholder ${ENROLL_VK_PLACEHOLDER}; pass --enroll-vk-hash <sha256 of ${VK_PATH}>`);
   if (!saltCommitment) return result("skip", "no pinned salt commitment (PINNED_SALT_COMMITMENT / --salt-commitment)");
   if (!audiences?.length) return result("skip", "no pinned audiences (PINNED_AUDIENCES / --audiences)");
 
@@ -165,6 +180,9 @@ export async function verifyEnrollProofs(entries, { repo, getJson, getBytes, vkS
     const meta = await getJson(`${repo}/${VK_META_PATH}`);
     if (meta?.bb_version && bbVersion && String(meta.bb_version) !== String(bbVersion)) {
       notes.push(`${VK_META_PATH} says bb ${meta.bb_version}, this verifier runs @aztec/bb.js ${bbVersion} — a proof that fails below may be a version drift, not a forgery`);
+    }
+    if (meta?.public_inputs != null && !publicInputsLayoutEndsWithAccountPubkey(meta.public_inputs)) {
+      return result("fail", `${VK_META_PATH} declares a public-input layout that does not end with account_pubkey[32]: ${JSON.stringify(meta.public_inputs)}`);
     }
   } catch {
     notes.push(`${VK_META_PATH} not published; bb version not cross-checked`);
@@ -230,7 +248,7 @@ export async function verifyEnrollProofs(entries, { repo, getJson, getBytes, vkS
       }
       let ok = false;
       try {
-        const publicInputs = enrollPublicInputs({ modulus, iss: e.iss, aud: e.aud, nullifierHex: e.nullifier, saltCommitmentHex: e.salt_commitment });
+        const publicInputs = enrollPublicInputs({ modulus, iss: e.iss, aud: e.aud, nullifierHex: e.nullifier, saltCommitmentHex: e.salt_commitment, accountPubkeyHex: e.account_pubkey });
         ok = await backend.verifyProof({ proof: base64ToBytes(proofBase64(e)), publicInputs, verificationKey: vk });
       } catch (err) {
         fail(e, `proof verification threw: ${err.message}`);

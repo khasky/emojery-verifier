@@ -10,7 +10,7 @@
 //     [--no-rekor] [--ots] [--btc-api <Esplora base>] [--ots-external <bin>] [--json]
 //     [--allow-unsigned-votes] [--no-proofs] [--blind-pubkey <SPKI b64>]
 //     [--enroll-vk-hash <sha256 hex>] [--salt-commitment <sha256 hex>]
-//     [--issuers provider=iss,...] [--audiences client_id,...]
+//     [--issuers provider=iss,...] [--audiences client_id,...] [--keys-per-account 10]
 //     [--no-color] [--ascii]
 //
 // --entries repo reads the raw leaves from the log repo's public
@@ -63,8 +63,10 @@
 //   5c. identity track (op 5..7 and signed votes): every signed vote names a key an
 //       earlier KEY leaf registered and verifies under it (G); every KEY leaf carries a
 //       valid blind RSA-PSS signature under the pinned blind key and no epoch registers
-//       more keys than it issued (H); every ISSUE cites an earlier ENROLL, at most three
-//       per epoch (I); every ENROLL proof verifies under the pinned verification key with
+//       more keys than it issued (H); every ISSUE cites an earlier ENROLL of the same
+//       (nullifier, account_pubkey) pair, is signed by that account key, carries a unique
+//       blinded_hash, and no (nullifier, epoch) holds more than --keys-per-account of
+//       them (I); every ENROLL proof verifies under the pinned verification key with
 //       public inputs rebuilt from the leaf and the archived provider key (J, via
 //       @aztec/bb.js; --no-proofs skips it). An unsigned vote is admitted only under
 //       --allow-unsigned-votes (the 1.0.0 compatibility window).
@@ -90,6 +92,7 @@ import {
   checkStructuralInvariants,
   checkWipeCompleteness,
   dailyAggregates,
+  EPOCH_KEYS_PER_ACCOUNT,
   foldCounters,
   hexToBytes,
   leafHashFromEntry,
@@ -102,7 +105,7 @@ import {
   verifySignature,
   verifySth,
 } from "./transparency.mjs";
-import { DEFAULT_ISSUERS, parseIssuersFlag, parseListFlag, verifyEnrollProofs } from "./identity.mjs";
+import { DEFAULT_ISSUERS, ENROLL_VK_PLACEHOLDER, parseIssuersFlag, parseListFlag, verifyEnrollProofs } from "./identity.mjs";
 import { runExternalOts, verifyDetachedOtsProof } from "./ots-bitcoin.mjs";
 import { beginAudit, detail, ELL, flush, mark, out, phase, raw, section, verdict } from "./report.mjs";
 
@@ -115,12 +118,14 @@ const PINNED_PUBKEY_B64 = "XeLiQ5CMhsjLmnQbIWSwWHNjcJg01Zs0veQDiwluT6c=";
 //   PINNED_BLIND_PUBKEY_SPKI_B64 — the RSA-2048 blind-signing public key (SPKI, base64),
 //     also published as keys/blind-rsa-v1.json in the log repo; the H signature check.
 //   PINNED_ENROLL_VK_SHA256 — SHA-256 of keys/enroll-v1.vk, the UltraHonk verification
-//     key of the ENROLL circuit; the J proof check.
+//     key of the ENROLL circuit; the J proof check. Were it ever left at
+//     ENROLL_VK_PLACEHOLDER, the proof check would fail (never skip) unless
+//     --enroll-vk-hash supplied the real digest.
 //   PINNED_SALT_COMMITMENT — SHA-256 of the operator's nullifier salt; a public input
 //     of every ENROLL proof.
 //   PINNED_AUDIENCES — the OAuth client ids the id_tokens were minted for.
 const PINNED_BLIND_PUBKEY_SPKI_B64 = "";
-const PINNED_ENROLL_VK_SHA256 = "fdb551a27a6f13a18a60c668a5dfd4ea59cf23bde136827c73b7a34676d15e72";
+const PINNED_ENROLL_VK_SHA256 = "09d386a1e439aea0f122a9599ae2fbde5ea79f30bac3e5661c106014ee92bfbb";
 const PINNED_SALT_COMMITMENT = "";
 const PINNED_AUDIENCES = [];
 const PINNED_ISSUERS = DEFAULT_ISSUERS;
@@ -162,10 +167,11 @@ const VALUE_FLAGS = new Set([
   "--salt-commitment",
   "--issuers",
   "--audiences",
+  "--keys-per-account",
 ]);
 const BARE_FLAGS = new Set(["--stats", "--counters", "--json", "--rekor", "--no-rekor", "--ots", "--allow-unsigned-votes", "--no-proofs", "--no-color", "--ascii", "--help"]);
 const USAGE =
-  "usage: node src/verify.mjs --api <url> [--repo <raw base>] [--entries api|repo] [--shard-size <n>] [--pubkey <b64>] [--wipe-grace-hours <n>] [--max-checkpoint-age-hours <n>] [--stats] [--counters] [--no-rekor] [--ots] [--btc-api <url>] [--ots-external <bin>] [--allow-unsigned-votes] [--no-proofs] [--blind-pubkey <spki b64>] [--enroll-vk-hash <hex>] [--salt-commitment <hex>] [--issuers provider=iss,...] [--audiences id,...] [--json] [--no-color] [--ascii]";
+  "usage: node src/verify.mjs --api <url> [--repo <raw base>] [--entries api|repo] [--shard-size <n>] [--pubkey <b64>] [--wipe-grace-hours <n>] [--max-checkpoint-age-hours <n>] [--stats] [--counters] [--no-rekor] [--ots] [--btc-api <url>] [--ots-external <bin>] [--allow-unsigned-votes] [--no-proofs] [--blind-pubkey <spki b64>] [--enroll-vk-hash <hex>] [--salt-commitment <hex>] [--issuers provider=iss,...] [--audiences id,...] [--keys-per-account <n>] [--json] [--no-color] [--ascii]";
 
 function arg(name) {
   const i = process.argv.indexOf(name);
@@ -819,6 +825,7 @@ async function main() {
   const enrollVkHash = arg("--enroll-vk-hash") ?? PINNED_ENROLL_VK_SHA256;
   const saltCommitment = arg("--salt-commitment") ?? PINNED_SALT_COMMITMENT;
   const audiences = arg("--audiences") ? parseListFlag(arg("--audiences")) : PINNED_AUDIENCES;
+  const keysPerAccount = Number(arg("--keys-per-account") ?? EPOCH_KEYS_PER_ACCOUNT);
   if (process.argv.includes("--help")) {
     console.log(USAGE);
     return;
@@ -839,10 +846,14 @@ async function main() {
     ["--enroll-vk-hash", enrollVkHash],
     ["--salt-commitment", saltCommitment],
   ]) {
-    if (value && !/^[0-9a-f]{64}$/i.test(value)) {
+    if (value && value !== ENROLL_VK_PLACEHOLDER && !/^[0-9a-f]{64}$/i.test(value)) {
       console.error(`${flag} needs a 64-hex SHA-256`);
       process.exit(2);
     }
+  }
+  if (!Number.isInteger(keysPerAccount) || keysPerAccount < 1) {
+    console.error("--keys-per-account needs a positive integer");
+    process.exit(2);
   }
   if (!Number.isFinite(maxAgeHours) || maxAgeHours < 0) {
     console.error("--max-checkpoint-age-hours needs a non-negative number (0 disables)");
@@ -1133,9 +1144,9 @@ async function main() {
   section("Identity");
 
   // 5c. the identity track. Structure first (G/H/I over the entries alone), then the
-  //     two signature checks, then the ENROLL proofs. An unsigned vote is a 1.0.0
+  //     three signature checks, then the ENROLL proofs. An unsigned vote is a 1.0.0
   //     leaf: admitted while the compatibility window is open, a failure after it.
-  const identity = await checkIdentityInvariants(entries);
+  const identity = await checkIdentityInvariants(entries, { keysPerAccount });
   out(`identity: ${identity.enrolls} enroll, ${identity.issues} issue, ${identity.keys} key leaf(s); ${identity.signedVotes} signed and ${identity.unsignedVotes} unsigned vote(s)`);
   for (const v of identity.violations.slice(0, 20)) detail(v);
   if (identity.violations.length > 20) detail(`${ELL}and ${identity.violations.length - 20} more`);
@@ -1144,13 +1155,17 @@ async function main() {
     check(false, `${identity.unsignedVotes} vote(s) carry no client signature (pass --allow-unsigned-votes while 1.0.0 clients are served)`, "identity_structure");
   }
 
-  const signing = phase("verifying vote and key signatures");
+  const signing = phase("verifying vote, issue and key signatures");
   const sigs = await verifyIdentitySignatures(entries, { blindPubkeySpkiB64: blindPubkey }, (done, total) => signing.tick(done, total));
   signing.end(entries.length, entries.length);
   for (const v of sigs.voteViolations.slice(0, 10)) detail(v);
   if (sigs.voteViolations.length > 10) detail(`${ELL}and ${sigs.voteViolations.length - 10} more`);
   if (sigs.votesChecked === 0) skipCheck("vote signatures (no signed votes in the log yet)", "vote_signatures");
   else check(sigs.voteViolations.length === 0, `every signed vote verifies under its epoch key (${sigs.votesChecked} checked, ${sigs.voteViolations.length} bad)`, "vote_signatures");
+  for (const v of sigs.issueViolations.slice(0, 10)) detail(v);
+  if (sigs.issueViolations.length > 10) detail(`${ELL}and ${sigs.issueViolations.length - 10} more`);
+  if (identity.issues === 0) skipCheck("issue signatures (no ISSUE leaves in the log yet)", "issue_signatures");
+  else check(sigs.issueViolations.length === 0, `every ISSUE leaf is signed by its enrolled account key (${sigs.issuesChecked} checked, ${sigs.issueViolations.length} bad)`, "issue_signatures");
   for (const v of sigs.keyViolations.slice(0, 10)) detail(v);
   if (sigs.keyViolations.length > 10) detail(`${ELL}and ${sigs.keyViolations.length - 10} more`);
   if (identity.keys === 0) skipCheck("epoch-key signatures (no KEY leaves in the log yet)", "key_signatures");
