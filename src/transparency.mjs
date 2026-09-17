@@ -244,7 +244,7 @@ export function verifySignature(pubRawB64, sigBytes, msgBytes) {
 }
 
 // Per-UTC-day aggregates derivable from the public entries: reactions (op
-// 1/2/3), distinct pseudonyms among them, and revocations (op=4). Feeds --stats.
+// 1/2/3), distinct pseudonyms among them, and revocations (op=4).
 export function dailyAggregates(entries) {
   const perDay = new Map(); // YYYY-MM-DD -> { votes, refs:Set, revokes }
   const dayOf = (ts) => new Date(Number(ts)).toISOString().slice(0, 10);
@@ -270,12 +270,6 @@ export function dailyAggregates(entries) {
 
 export function counterKey(site, target, reaction) {
   return `${site}\x00${target}\x00${reaction}`;
-}
-
-// Inverse of counterKey, so anything printing the fold reads the separator from
-// the one place that writes it.
-export function splitCounterKey(key) {
-  return key.split("\x00");
 }
 
 // log → counters fold (mirrors the served counter math, including op=4 revoke reversal).

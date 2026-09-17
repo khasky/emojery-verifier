@@ -5,7 +5,7 @@
 //   node src/archive.selftest.mjs
 
 import { bytesToHex, checkHashChain, dailyAggregates, entryHash, GENESIS_PREV, merkleRootFromLeaves, merkleRootsAtSizes, sha256, utf8 } from "./transparency.mjs";
-import { pickCoveredCheckpoint } from "./verify.mjs";
+import { pickCoveredCheckpoint } from "./checks/archive.mjs";
 
 let failed = false;
 const DAY = 86_400_000;

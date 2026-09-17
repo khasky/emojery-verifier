@@ -8,7 +8,9 @@
 // fetch is stubbed here and every request the code makes is recorded and asserted.
 // Real network is never touched.
 
-import { crossCheckEntriesSource, emptyLog, fetchEntries, fetchRevocations, getJson, listRepoDir, RETRY_MAX } from "./verify.mjs";
+import { crossCheckEntriesSource, fetchEntries } from "./checks/leaves.mjs";
+import { fetchRevocations } from "./checks/semantics.mjs";
+import { emptyLog, getJson, listRepoDir, RETRY_MAX } from "./http.mjs";
 
 let failed = false;
 function check(ok, msg) {
@@ -149,14 +151,14 @@ const revoke = (seq) => ({ seq: String(seq), ts: 1, revoke_seq: "1", reason_code
   };
 
   const calls = stubFetch(handler);
-  const entries = await fetchEntries(API, REPO, "repo", 1340, 10_000);
+  const entries = await fetchEntries(API, REPO, "repo", 1340);
   const pages = calls.filter((c) => c.includes("from="));
   check(entries.length === 1340, `shard tail is filled up to the checkpoint (got ${entries.length} of 1340)`);
   check(entries[entries.length - 1].seq === "1340", `the filled tail ends at the checkpoint's last leaf (${entries[entries.length - 1].seq})`);
   check(pages.length === 1 && pages[0].endsWith("from=1331&to=1340"), `only the missing tail is refetched (${pages.join(" ") || "none"})`);
 
   const offline = stubFetch(handler);
-  const shardsOnly = await fetchEntries(undefined, REPO, "repo", 1340, 10_000);
+  const shardsOnly = await fetchEntries(undefined, REPO, "repo", 1340);
   check(shardsOnly.length === 1330 && !offline.some((c) => c.includes("from=")), "a fully offline audit stays on the shards and contacts no API");
 
   // No shard at all: the publisher batches appends, so a young log - a freshly
@@ -164,7 +166,7 @@ const revoke = (seq) => ({ seq: String(seq), ts: 1, revoke_seq: "1", reason_code
   // entries/ directory. A 404 there must read as "not mirrored yet" and fall
   // through to the same tail fill, not as a broken mirror.
   stubFetch((u) => (u.pathname.includes("/entries/") ? { status: 404 } : handler(u)));
-  const unmirrored = await fetchEntries(API, REPO, "repo", 482, 10_000);
+  const unmirrored = await fetchEntries(API, REPO, "repo", 482);
   check(unmirrored.length === 482, `an unpublished shard falls back to the API for every leaf (got ${unmirrored.length} of 482)`);
 
   // Any other transport failure still fails the run: a 500 is the mirror being
@@ -172,7 +174,7 @@ const revoke = (seq) => ({ seq: String(seq), ts: 1, revoke_seq: "1", reason_code
   stubFetch((u) => (u.pathname.includes("/entries/") ? { status: 500 } : handler(u)));
   let shardThrew = false;
   try {
-    await fetchEntries(API, REPO, "repo", 482, 10_000);
+    await fetchEntries(API, REPO, "repo", 482);
   } catch {
     shardThrew = true;
   }

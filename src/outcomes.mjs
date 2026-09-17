@@ -1,0 +1,34 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// The per-check outcomes behind the verdict and the --json summary. Each check key
+// holds one of pass / fail / skip; a fail is sticky, and a pass replaces a skip.
+
+import { mark } from "./report.mjs";
+
+export const checks = {};
+let failed = false;
+
+export function record(key, status) {
+  if (checks[key] === "fail") return;
+  if (status === "fail") {
+    checks[key] = "fail";
+    return;
+  }
+  if (checks[key] === undefined || checks[key] === "skip") checks[key] = status;
+}
+
+export function check(ok, msg, key) {
+  mark(ok ? "pass" : "fail", msg);
+  if (!ok) failed = true;
+  if (key) record(key, ok ? "pass" : "fail");
+}
+
+// A check that could not run is its own outcome, never folded into a pass: the
+// closing tally has to say how much of the audit executed.
+export function skipCheck(msg, key) {
+  mark("skip", msg);
+  if (key) record(key, "skip");
+}
+
+export function hasFailed() {
+  return failed;
+}
