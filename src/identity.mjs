@@ -48,8 +48,7 @@ export const DEFAULT_ISSUERS = [
   { provider: "apple", iss: "https://appleid.apple.com" },
   { provider: "microsoft", iss: "^https://login\\.microsoftonline\\.com/[0-9a-f-]{36}/v2\\.0$" },
   { provider: "facebook", iss: "https://www.facebook.com" },
-  { provider: "linkedin", iss: "https://www.linkedin.com/oauth" },
-  { provider: "discord", iss: "https://discord.com" },
+  // LinkedIn and Discord are absent: they sign with RSA-4096, which enroll-v1 cannot prove.
   { provider: "twitch", iss: "https://id.twitch.tv/oauth2" },
   { provider: "slack", iss: "https://slack.com" },
 ];
