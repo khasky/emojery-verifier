@@ -8,7 +8,7 @@
 
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
-import { checkpointForShardCoverage, verifyCheckpointArchive } from "./checks/archive.mjs";
+import { checkConsistencyChain, checkpointForShardCoverage, verifyCheckpointArchive } from "./checks/archive.mjs";
 import { checkCheckpointSignature, checkFreshness, checkGithubAnchor } from "./checks/checkpoint.mjs";
 import { checkIdentityTrack } from "./checks/identity-track.mjs";
 import { checkEntriesSource, checkHashChainReplay, checkMerkleRoot, fetchEntries, rehashLeaves } from "./checks/leaves.mjs";
@@ -18,7 +18,7 @@ import { checkRevocationFeed, checkStructure, checkWipes, reportFold } from "./c
 import { HELP, parseCli, USAGE } from "./cli.mjs";
 import { emptyLog, getJson, githubSlugFromRawBase } from "./http.mjs";
 import { DEFAULT_ISSUERS } from "./identity.mjs";
-import { checks, hasFailed } from "./outcomes.mjs";
+import { checks, hasFailed, skipCheck } from "./outcomes.mjs";
 import { configureReport, detail, flush, out, section, verdict } from "./report.mjs";
 
 // The published log signing key (base64 raw Ed25519).
@@ -76,10 +76,11 @@ async function main() {
   // Offline, how far the shards reach decides which checkpoint this run can audit:
   // the newest published one they fully cover. With --api the missing tail is
   // fetched instead and the tip stays under test.
+  const leafless = o.entriesMode === "none";
   let entries = null;
   let uncovered = false;
-  if (!o.api) {
-    entries = await fetchEntries(o.api, o.repo, o.entriesMode, treeSize);
+  if (!o.api && !leafless) {
+    entries = await fetchEntries(o.api, o.repo, treeSize, { mode: o.entriesMode, base: o.entriesBase });
     const covered = entries.length ? Number(entries[entries.length - 1].seq) : 0;
     if (covered < treeSize) {
       const stepped = await checkpointForShardCoverage(o.repo, covered);
@@ -100,40 +101,57 @@ async function main() {
   checkFreshness(liveCp, o.maxAgeHours);
   await checkGithubAnchor(o.repo, o.api, liveCp);
 
+  // --entries none checks the signed checkpoints and the consistency proofs beside
+  // them without downloading a leaf, which is seconds on a log of any size. The root
+  // commits to whatever leaves the operator folded into it, so everything below that
+  // reads a leaf is skipped and reported.
   section("Leaves & Merkle");
-  entries ??= await fetchEntries(o.api, o.repo, o.entriesMode, treeSize);
-  const leaves = await rehashLeaves(entries);
-  await checkMerkleRoot(leaves, cp, treeSize, o.entriesMode, uncovered);
-  await checkHashChainReplay(entries, leaves);
+  let leaves = [];
+  if (leafless) {
+    skipCheck("leaf hashes, Merkle root and hash chain (--entries none)", "merkle_root");
+  } else {
+    entries ??= await fetchEntries(o.api, o.repo, treeSize, { mode: o.entriesMode, base: o.entriesBase });
+    leaves = await rehashLeaves(entries);
+    await checkMerkleRoot(leaves, cp, treeSize, o.entriesMode, uncovered);
+    await checkHashChainReplay(entries, leaves);
+  }
 
   section("Checkpoint archive");
-  const archiveBySize = await verifyCheckpointArchive(o.repo, pubkey, leaves, liveCp);
+  const archiveBySize = await verifyCheckpointArchive(o.repo, pubkey, leafless ? null : leaves, liveCp);
+  if (archiveBySize) await checkConsistencyChain(archiveBySize);
 
   section("Independent witness");
   const rekorEntryId = await verifyRekor(o.repo, pubkey, liveCp, archiveBySize, o.rekorDisabled);
 
   section("Entries cross-check");
-  await checkEntriesSource(o.api, o.entriesMode, entries, treeSize);
+  if (leafless) {
+    skipCheck("the entries cross-check, the counter fold, the revocation feed and invariants A-J (--entries none)", "leafless");
+    detail("no leaf was read: the checkpoints and their consistency proofs are checked, the contents of the log are not");
+  } else {
+    await checkEntriesSource(o.api, o.entriesMode, entries, treeSize);
+  }
 
-  section("Log semantics");
-  reportFold(entries);
-  await checkRevocationFeed(o.api, entries, treeSize);
-  checkStructure(entries);
-  checkWipes(entries, cp, o.wipeGraceHours);
+  if (!leafless) {
+    section("Log semantics");
+    reportFold(entries);
+    await checkRevocationFeed(o.api, entries, treeSize);
+    checkStructure(entries);
+    checkWipes(entries, cp, o.wipeGraceHours);
 
-  section("Identity");
-  await checkIdentityTrack(entries, {
-    repo: o.repo,
-    keysPerAccount: o.keysPerAccount,
-    allowUnsignedVotes: o.allowUnsignedVotes,
-    blindPubkey,
-    proofsDisabled: o.proofsDisabled,
-    enrollVkHash: o.enrollVkHash ?? PINNED_ENROLL_VK_SHA256,
-    saltCommitment: o.saltCommitment ?? PINNED_SALT_COMMITMENT,
-    issuers: o.issuers ?? PINNED_ISSUERS,
-    audiences: o.audiences ?? PINNED_AUDIENCES,
-    bbVersion: BB_JS_VERSION,
-  });
+    section("Identity");
+    await checkIdentityTrack(entries, {
+      repo: o.repo,
+      keysPerAccount: o.keysPerAccount,
+      allowUnsignedVotes: o.allowUnsignedVotes,
+      blindPubkey,
+      proofsDisabled: o.proofsDisabled,
+      enrollVkHash: o.enrollVkHash ?? PINNED_ENROLL_VK_SHA256,
+      saltCommitment: o.saltCommitment ?? PINNED_SALT_COMMITMENT,
+      issuers: o.issuers ?? PINNED_ISSUERS,
+      audiences: o.audiences ?? PINNED_AUDIENCES,
+      bbVersion: BB_JS_VERSION,
+    });
+  }
 
   if (o.ots) section("Bitcoin anchor");
   const btcBlockHeight = await verifyOts(o.repo, pubkey, { enabled: o.ots, btcApi: o.btcApi, otsExternal: o.otsExternal });
@@ -152,7 +170,7 @@ async function main() {
       sources: [
         o.api ? new URL(o.api).host : "offline (API not contacted)",
         slug ? `${slug.owner}/${slug.repo}@${slug.ref}` : o.repo ? new URL(o.repo).host : null,
-        o.entriesMode === "repo" ? "entry shards" : "API pages",
+        { repo: "entry shards", manifest: "manifest + shard bodies", none: "no leaves read", api: "API pages" }[o.entriesMode],
       ],
       elapsedSec: ((Date.now() - startedAt) / 1000).toFixed(1),
       reproduce: `node src/verify.mjs ${process.argv.slice(2).join(" ")}`,

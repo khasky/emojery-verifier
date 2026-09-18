@@ -97,7 +97,8 @@ The same tool verifies a staging deployment or a fork; the flags below replace t
 | Flag | Meaning |
 | --- | --- |
 | `--pubkey <base64>` | the deployment's log signing key (raw Ed25519) |
-| `--entries api\|repo` | where the leaves come from (default `api`). `repo` reads the log repository's `entries/` shards: cheaper on a large log, and with no `--api` a fully offline audit of a clone or mirror |
+| `--entries <source>` | where the leaves come from (default `api`): `repo` reads the log repository's `entries/` shards; `manifest` reads the repository's `entries/manifest` and fetches each shard body from the host it names, checking it against its `sha256`; `none` reads no leaves at all (below). With no `--api`, all three audit a mirror offline |
+| `--entries-base <url>` | where `--entries manifest` fetches the bodies from, instead of the host `entries/mirrors.json` names. Any copy will do: the manifest's digest is what decides |
 | `--no-proofs` | skip the ENROLL proof check, the one that loads `@aztec/bb.js` |
 | `--no-rekor` | skip the Rekor witness check |
 | `--wipe-grace-hours <n>` | grace for account wipes still in flight (default 48; a quiescent log can be audited with 0) |
@@ -114,11 +115,18 @@ The same tool verifies a staging deployment or a fork; the flags below replace t
 Offline audit of a mirror, no request to the operator's API:
 
 ```
-node src/verify.mjs --entries repo \
+node src/verify.mjs --entries manifest \
   --repo https://raw.githubusercontent.com/khasky/emojery-log/main
 ```
 
 The shards are published in batches, so an offline run audits the newest published checkpoint the shards fully cover, says which one, and still cross-checks the tip's Rekor witness. With `--api` as well, the shards carry the bulk and only the missing tail is fetched.
+
+`--entries none` skips the leaves entirely: it verifies every archived checkpoint signature, refuses two signatures that disagree on one tree size, replays the chain of consistency proofs published beside them, and cross-checks the tip against its Rekor witness. That covers everything the log published about its own history, in seconds and with no download. It covers nothing about the leaves themselves - the counter fold and invariants A-J need them - and the run prints which checks it skipped.
+
+```
+node src/verify.mjs --entries none \
+  --repo https://raw.githubusercontent.com/khasky/emojery-log/main
+```
 
 ### Watch the log yourself
 

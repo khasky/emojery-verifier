@@ -11,6 +11,7 @@ const VALUE_FLAGS = new Set([
   "--repo",
   "--pubkey",
   "--entries",
+  "--entries-base",
   "--wipe-grace-hours",
   "--max-checkpoint-age-hours",
   "--btc-api",
@@ -46,9 +47,21 @@ ${USAGE}
   --help                    this text
 
 advanced (another deployment, a policy window, a lighter run):
-  --entries api|repo        where the leaves come from (default api). repo reads the
-                            log repository's entries/ shards; with no --api that is a
-                            fully offline audit of a clone or mirror
+  --entries <source>        where the leaves come from (default api):
+                              api       paged /log/entries from the operator
+                              repo      the log repository's entries/ shards
+                              manifest  the repository's entries/manifest, with the
+                                        shard bodies fetched from the host it names
+                                        and each one checked against its sha256
+                              none      read no leaves at all: the signed checkpoints,
+                                        their consistency proofs and the witnesses,
+                                        which is seconds on a log of any size. The
+                                        counter fold and invariants A-J are skipped
+                                        and reported as such
+                            with no --api, repo|manifest|none audit a mirror offline
+  --entries-base <url>      where --entries manifest fetches the shard bodies from,
+                            instead of the host entries/mirrors.json names. Any copy
+                            will do: the manifest's sha256 decides
   --no-proofs               skip the ENROLL proof check (the one that loads @aztec/bb.js)
   --no-rekor                skip the Sigstore Rekor witness check
   --wipe-grace-hours <n>    grace for account wipes still in flight (default 48)
@@ -105,6 +118,7 @@ export function parseCli(args) {
     repo: valueOf(args, "--repo"),
     pubkey: valueOf(args, "--pubkey"),
     entriesMode: valueOf(args, "--entries") ?? "api",
+    entriesBase: valueOf(args, "--entries-base") ?? null,
     wipeGraceHours: Number(valueOf(args, "--wipe-grace-hours") ?? "48"),
     maxAgeHours: Number(valueOf(args, "--max-checkpoint-age-hours") ?? "168"),
     ots: args.includes("--ots"),
@@ -134,9 +148,11 @@ export function parseCli(args) {
   }
   if (!Number.isInteger(options.keysPerAccount) || options.keysPerAccount < 0) return { error: "--keys-per-account needs a non-negative integer (0 = no bound)" };
   if (!Number.isFinite(options.maxAgeHours) || options.maxAgeHours < 0) return { error: "--max-checkpoint-age-hours needs a non-negative number (0 disables)" };
-  if (options.entriesMode !== "api" && options.entriesMode !== "repo") return { error: "--entries must be 'api' or 'repo'" };
+  if (!["api", "repo", "manifest", "none"].includes(options.entriesMode)) return { error: "--entries must be 'api', 'repo', 'manifest' or 'none'" };
+  if (options.entriesMode === "manifest" && !options.repo) return { error: "--entries manifest needs --repo (the manifest lives in the log repository)" };
+  if (options.entriesBase && options.entriesMode !== "manifest") return { error: "--entries-base only applies to --entries manifest" };
   // --api is optional only for the offline audit (--entries repo with --repo).
-  if (!options.api && !(options.entriesMode === "repo" && options.repo)) return { error: "--api is required unless --entries repo and --repo make an offline audit" };
+  if (!options.api && !(["repo", "manifest", "none"].includes(options.entriesMode) && options.repo)) return { error: "--api is required unless --entries repo|manifest|none and --repo make an offline audit" };
   if (options.entriesMode === "repo" && !options.repo) return { error: "--entries repo needs --repo" };
   if (!Number.isFinite(options.wipeGraceHours) || options.wipeGraceHours < 0) return { error: "--wipe-grace-hours needs a non-negative number" };
   if (options.otsExternal && !options.ots) return { error: "--ots-external requires --ots" };

@@ -10,6 +10,7 @@
 
 import { crossCheckEntriesSource, fetchEntries } from "./checks/leaves.mjs";
 import { fetchRevocations } from "./checks/semantics.mjs";
+import { createHash } from "node:crypto";
 import { emptyLog, getJson, listRepoDir, RETRY_MAX } from "./http.mjs";
 
 let failed = false;
@@ -151,14 +152,14 @@ const revoke = (seq) => ({ seq: String(seq), ts: 1, revoke_seq: "1", reason_code
   };
 
   const calls = stubFetch(handler);
-  const entries = await fetchEntries(API, REPO, "repo", 1340);
+  const entries = await fetchEntries(API, REPO, 1340, { mode: "repo" });
   const pages = calls.filter((c) => c.includes("from="));
   check(entries.length === 1340, `shard tail is filled up to the checkpoint (got ${entries.length} of 1340)`);
   check(entries[entries.length - 1].seq === "1340", `the filled tail ends at the checkpoint's last leaf (${entries[entries.length - 1].seq})`);
   check(pages.length === 1 && pages[0].endsWith("from=1331&to=1340"), `only the missing tail is refetched (${pages.join(" ") || "none"})`);
 
   const offline = stubFetch(handler);
-  const shardsOnly = await fetchEntries(undefined, REPO, "repo", 1340);
+  const shardsOnly = await fetchEntries(undefined, REPO, 1340, { mode: "repo" });
   check(shardsOnly.length === 1330 && !offline.some((c) => c.includes("from=")), "a fully offline audit stays on the shards and contacts no API");
 
   // No shard at all: the publisher batches appends, so a young log - a freshly
@@ -166,7 +167,7 @@ const revoke = (seq) => ({ seq: String(seq), ts: 1, revoke_seq: "1", reason_code
   // entries/ directory. A 404 there must read as "not mirrored yet" and fall
   // through to the same tail fill, not as a broken mirror.
   stubFetch((u) => (u.pathname.includes("/entries/") ? { status: 404 } : handler(u)));
-  const unmirrored = await fetchEntries(API, REPO, "repo", 482);
+  const unmirrored = await fetchEntries(API, REPO, 482, { mode: "repo" });
   check(unmirrored.length === 482, `an unpublished shard falls back to the API for every leaf (got ${unmirrored.length} of 482)`);
 
   // Any other transport failure still fails the run: a 500 is the mirror being
@@ -174,11 +175,58 @@ const revoke = (seq) => ({ seq: String(seq), ts: 1, revoke_seq: "1", reason_code
   stubFetch((u) => (u.pathname.includes("/entries/") ? { status: 500 } : handler(u)));
   let shardThrew = false;
   try {
-    await fetchEntries(API, REPO, "repo", 482);
+    await fetchEntries(API, REPO, 482, { mode: "repo" });
   } catch {
     shardThrew = true;
   }
   check(shardThrew, "an unreadable shard (500) still fails the run");
+}
+
+// --- 6b. manifest mode: the digest is what makes the body's host irrelevant ---
+// A shard fetched from anywhere is admitted only if its bytes hash to what the
+// manifest committed to in the repository. That is the whole trust argument for
+// serving the bodies off object storage, so it gets a test on both sides.
+{
+  // listRepoDir goes through the GitHub contents API, so the manifest needs a
+  // raw.githubusercontent.com base rather than the generic REPO used above.
+  const GH_REPO = "https://raw.githubusercontent.com/khasky/log/main";
+  const bodyText = [1, 2, 3].map((n) => JSON.stringify({ seq: String(n), leaf_hash: "aa" })).join("\n");
+  const digest = createHash("sha256").update(bodyText, "utf8").digest("hex");
+  const manifest = (sha) => JSON.stringify({ from: 1, to: 3, count: 3, bytes: bodyText.length, sha256: sha });
+  const serve = (sha, base) => (u) => {
+    if (u.host === "api.github.com") return { body: [{ name: "000000000001-000000010000.ndjson" }] };
+    if (u.pathname.endsWith("/entries/mirrors.json")) return { body: { base } };
+    if (u.pathname.includes("/entries/manifest/")) return { text: manifest(sha) };
+    if (u.pathname.includes("/entries/")) return { text: bodyText };
+    return { status: 404 };
+  };
+
+  stubFetch(serve(digest, "https://log.example/"));
+  const rows = await fetchEntries(undefined, GH_REPO, 3, { mode: "manifest" });
+  check(rows.length === 3 && rows[2].seq === "3", `manifest mode reads the shard the manifest names (got ${rows.length} of 3)`);
+
+  const hosts = stubFetch(serve(digest, "https://log.example/"));
+  await fetchEntries(undefined, GH_REPO, 3, { mode: "manifest" });
+  check(
+    hosts.some((c) => c.startsWith("https://log.example/entries/")),
+    `the body comes from the host mirrors.json names (${hosts.filter((c) => c.includes("/entries/")).join(" ")})`,
+  );
+
+  const overridden = stubFetch(serve(digest, "https://log.example/"));
+  await fetchEntries(undefined, GH_REPO, 3, { mode: "manifest", base: "https://mirror.example" });
+  check(
+    overridden.some((c) => c.startsWith("https://mirror.example/entries/")),
+    "--entries-base overrides the host mirrors.json names",
+  );
+
+  stubFetch(serve("0".repeat(64), "https://log.example/"));
+  let digestThrew = "";
+  try {
+    await fetchEntries(undefined, GH_REPO, 3, { mode: "manifest" });
+  } catch (e) {
+    digestThrew = e.message;
+  }
+  check(digestThrew.includes("sha256") && digestThrew.includes("000000000001-000000000003"), `a body that does not match its manifest digest is refused (${digestThrew.slice(0, 60)})`);
 }
 
 // --- 7. an empty log is a state, not a failure ------------------------------

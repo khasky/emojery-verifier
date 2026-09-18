@@ -5,7 +5,7 @@
 import { getText, listRepoDir } from "../http.mjs";
 import { check, skipCheck } from "../outcomes.mjs";
 import { detail, phase } from "../report.mjs";
-import { bytesToHex, hexToBytes, merkleRootsAtSizes, verifySth } from "../transparency.mjs";
+import { bytesToHex, hexToBytes, merkleRootsAtSizes, verifyConsistency, verifySth } from "../transparency.mjs";
 
 // Memoized: an offline run reads the archive twice (to pick the checkpoint the shards
 // cover, then to replay it) and the listing is metered by GitHub.
@@ -126,6 +126,13 @@ export async function verifyCheckpointArchive(repo, pubkey, leaves, liveCp) {
   check(maxSize <= Number(liveCp.tree_size), `archive never exceeds the live tree (max archived ${maxSize} <= ${liveCp.tree_size})`, "archive");
   check(bySize.has(String(liveCp.tree_size)) && bySize.get(String(liveCp.tree_size)).root_hash === liveCp.root_hash, "the live checkpoint is present in the archive shards", "archive");
 
+  // With no leaves (--entries none) the replay has nothing to recompute against; the
+  // consistency chain below is what answers the same question there.
+  if (leaves === null) {
+    skipCheck("archived roots replayed from the leaves (--entries none)", "archive_replay");
+    return bySize;
+  }
+
   // Only sizes the leaves in hand reach can be replayed; an offline run stepped back
   // from the tip reports how many it left alone.
   const replaySizes = sizes.filter((s) => s <= leaves.length);
@@ -142,4 +149,52 @@ export async function verifyCheckpointArchive(repo, pubkey, leaves, liveCp) {
   if (skipped > 0) detail(`${skipped} archived checkpoint(s) above the ${leaves.length} leaves in hand - not replayed`);
   check(rootMismatch === 0, `every archived root replays from today's leaves (${replaySizes.length} checkpoint(s), ${rootMismatch} mismatch)`, "archive");
   return bySize;
+}
+
+// The same question the replay above answers - was anything rewritten? - asked from
+// the proofs the operator publishes beside each checkpoint instead of from the leaves.
+// It costs ~log2(tree_size) hashes per link and no download, so it is the whole audit
+// for a reader who only wants to know the history is append-only, and a second
+// opinion for one who folds the leaves anyway.
+//
+// A link with no proof is reported, never failed: checkpoints published before the
+// field existed carry none, and refusing them would fail every honest log with
+// history. What IS a failure is a proof that does not verify.
+export async function checkConsistencyChain(bySize) {
+  const sizes = [...bySize.keys()].map(Number).sort((a, b) => a - b);
+  if (sizes.length < 2) {
+    skipCheck("consistency chain (fewer than two archived checkpoints)", "consistency");
+    return;
+  }
+  let proven = 0;
+  let unproven = 0;
+  let bad = 0;
+  const walk = phase("checking consistency proofs");
+  for (let i = 1; i < sizes.length; i++) {
+    walk.tick(i, sizes.length - 1);
+    const next = bySize.get(String(sizes[i]));
+    const proof = Array.isArray(next.consistency) ? next.consistency : null;
+    if (!proof) {
+      unproven++;
+      continue;
+    }
+    // The link names the size it extends, so a skipped checkpoint cannot be passed
+    // off as an adjacent one.
+    const from = Number(next.consistency_from);
+    const prev = bySize.get(String(from));
+    if (!prev || from !== sizes[i - 1]) {
+      bad++;
+      detail(`tree_size=${sizes[i]}: consistency_from=${next.consistency_from} is not the preceding archived checkpoint (${sizes[i - 1]})`);
+      continue;
+    }
+    const ok = await verifyConsistency(from, sizes[i], hexToBytes(prev.root_hash), hexToBytes(next.root_hash), proof.map(hexToBytes));
+    if (ok) proven++;
+    else {
+      bad++;
+      detail(`tree_size=${from} -> ${sizes[i]}: the published consistency proof does not verify - the newer tree does not contain the older one`);
+    }
+  }
+  walk.end(sizes.length - 1, sizes.length - 1);
+  if (unproven > 0) detail(`${unproven} link(s) carry no consistency proof (checkpoints published before the field existed)`);
+  check(bad === 0, `every published consistency proof verifies (${proven} link(s) proven, ${unproven} unproven, ${bad} bad)`, "consistency");
 }

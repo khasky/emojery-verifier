@@ -232,6 +232,63 @@ export async function merkleRootsAtSizes(leaves, sizes) {
   return roots;
 }
 
+function bytesEqual(a, b) {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (const [i, byte] of a.entries()) diff |= byte ^ (b[i] ?? 0);
+  return diff === 0;
+}
+
+function isPow2(n) {
+  if (n < 1 || !Number.isInteger(n)) return false;
+  while (n % 2 === 0) n /= 2;
+  return n === 1;
+}
+
+// Does the tree of size `second` contain the tree of size `first` as a prefix?
+// Answered from ~log2(second) hashes with no leaf in hand - which is the whole
+// point: an auditor who only wants to know that nothing was rewritten never
+// downloads the log. The operator publishes the proof beside each checkpoint
+// (checks/archive.mjs), so this runs offline too.
+// Keep in sync with emojery-workers src/lib/merkle.ts verifyConsistency.
+export async function verifyConsistency(first, second, oldRoot, newRoot, proofIn) {
+  if (first < 0 || first > second) return false;
+  if (first === 0) return true; // every tree extends the empty tree
+  if (first === second) return proofIn.length === 0 && bytesEqual(oldRoot, newRoot);
+  const proof = isPow2(first) ? [oldRoot, ...proofIn] : proofIn;
+  if (proof.length === 0) return false;
+  // Two indices walking up the same path, one in each tree, and the two roots
+  // rebuilt in step from the shared node the proof starts at.
+  let oldIdx = first - 1;
+  let newIdx = second - 1;
+  while (oldIdx % 2 === 1) {
+    oldIdx = Math.floor(oldIdx / 2);
+    newIdx = Math.floor(newIdx / 2);
+  }
+  const seed = proof[0];
+  if (!seed) return false;
+  let oldHash = seed;
+  let newHash = seed;
+  for (const sibling of proof.slice(1)) {
+    if (newIdx === 0) return false;
+    if (oldIdx % 2 === 1 || oldIdx === newIdx) {
+      oldHash = await nodeHash(sibling, oldHash);
+      newHash = await nodeHash(sibling, newHash);
+      if (oldIdx % 2 === 0) {
+        do {
+          oldIdx = Math.floor(oldIdx / 2);
+          newIdx = Math.floor(newIdx / 2);
+        } while (oldIdx % 2 === 0 && oldIdx !== 0);
+      }
+    } else {
+      newHash = await nodeHash(newHash, sibling);
+    }
+    oldIdx = Math.floor(oldIdx / 2);
+    newIdx = Math.floor(newIdx / 2);
+  }
+  return newIdx === 0 && bytesEqual(oldHash, oldRoot) && bytesEqual(newHash, newRoot);
+}
+
 export function sthBytes(treeSize, rootHash, ts) {
   return concatBytes(u64be(treeSize), rootHash, u64be(ts));
 }

@@ -4,7 +4,7 @@
 // public entries.
 //   node src/archive.selftest.mjs
 
-import { bytesToHex, checkHashChain, dailyAggregates, entryHash, GENESIS_PREV, merkleRootFromLeaves, merkleRootsAtSizes, sha256, utf8 } from "./transparency.mjs";
+import { bytesToHex, checkHashChain, dailyAggregates, entryHash, GENESIS_PREV, merkleRootFromLeaves, merkleRootsAtSizes, sha256, utf8, verifyConsistency } from "./transparency.mjs";
 import { pickCoveredCheckpoint } from "./checks/archive.mjs";
 
 let failed = false;
@@ -68,6 +68,54 @@ check(pickCoveredCheckpoint(archive, 1400)?.tree_size === "1349", "coverage: the
 check(pickCoveredCheckpoint(archive, 1433)?.tree_size === "1433", "coverage: full coverage keeps the tip");
 check(pickCoveredCheckpoint(archive, 99) === null, "coverage: no checkpoint below the mirrored leaves yields none");
 check(pickCoveredCheckpoint([{ parseError: true }], 5000) === null, "coverage: an unparseable archive line is never chosen");
+
+// Consistency proofs: the cheap half of "the log was not rewritten", ~log2(n) hashes
+// with no leaf in hand. The proofs are generated below by a second, independent
+// transcription of the subproof recursion, so the check is against the algorithm
+// rather than against the verifier's own arithmetic.
+async function subProof(m, d, b) {
+  if (m === d.length) return b ? [] : [await merkleRootFromLeaves(d)];
+  let k = 1;
+  while (k * 2 < d.length) k *= 2;
+  if (m <= k) return [...(await subProof(m, d.slice(0, k), b)), await merkleRootFromLeaves(d.slice(k))];
+  return [...(await subProof(m - k, d.slice(k), false)), await merkleRootFromLeaves(d.slice(0, k))];
+}
+const consistencyProof = (m, d) => subProof(m, d, true);
+
+let everyPairOk = true;
+for (const [first, second] of [
+  [1, 2],
+  [1, 9],
+  [2, 3],
+  [3, 5],
+  [4, 8],
+  [5, 9],
+  [8, 9],
+]) {
+  const proof = await consistencyProof(first, leaves.slice(0, second));
+  const ok = await verifyConsistency(first, second, roots.get(first) ?? (await merkleRootFromLeaves(leaves.slice(0, first))), await merkleRootFromLeaves(leaves.slice(0, second)), proof);
+  if (!ok) everyPairOk = false;
+}
+check(everyPairOk, "consistency: a correct proof verifies for every prefix pair tried");
+
+const proof59 = await consistencyProof(5, leaves.slice(0, 9));
+const root5 = await merkleRootFromLeaves(leaves.slice(0, 5));
+const root9 = await merkleRootFromLeaves(leaves);
+check(await verifyConsistency(0, 9, new Uint8Array(32), root9, []), "consistency: every tree extends the empty tree");
+check(await verifyConsistency(9, 9, root9, root9, []), "consistency: a tree extends itself with no proof");
+check(!(await verifyConsistency(9, 9, root9, root5, [])), "consistency: equal sizes with different roots is refused");
+check(!(await verifyConsistency(5, 9, root5, root9, [])), "consistency: an empty proof cannot stand in for a real one");
+const bent = proof59.map((h, i) => (i === 0 ? new Uint8Array(32) : h));
+check(!(await verifyConsistency(5, 9, root5, root9, bent)), "consistency: a tampered proof element is refused");
+check(!(await verifyConsistency(5, 9, root9, root9, proof59)), "consistency: a proof against the wrong old root is refused");
+
+// The scenario the check exists for: the operator rewrites a leaf inside the sealed
+// prefix and publishes a new root over the rewritten tree. No proof can carry the
+// old root into the new one, whatever the operator serves.
+const rewritten = leaves.slice();
+rewritten[2] = await sha256(utf8("rewritten"));
+const rewrittenRoot9 = await merkleRootFromLeaves(rewritten);
+check(!(await verifyConsistency(5, 9, root5, rewrittenRoot9, await consistencyProof(5, rewritten))), "consistency: a rewritten prefix cannot be proven consistent with the old root");
 
 // --- dailyAggregates -----------------------------------------------------------
 const T = Date.parse("2026-07-18T10:00:00Z");
