@@ -93,7 +93,7 @@ export async function sha256(b) {
 // op 1..3 with a client key appends || lpb(pubkey) || lpb(sig) || lp(nonce) — a legacy
 //   (1.0.0, unsigned) vote keeps the bare 8-field bytes;
 // op=4 appends || u64(revoke_seq) || lp(reason_code) || lpb(evidence_hash);
-// op=5 appends || lp(nullifier) || lp(iss) || lp(aud) || lp(kid) || lpb(proof) || lpb(salt_commitment) || lpb(account_pubkey);
+// op=5 appends || lp(nullifier) || lp(iss) || lp(aud) || lp(kid) || lpb(proof_hash32) || lpb(salt_commitment) || lpb(account_pubkey);
 // op=6 appends || lp(nullifier) || u64(epoch) || lpb(account_pubkey) || lpb(blinded_hash) || lpb(account_sig);
 // op=7 appends || u64(epoch) || lpb(pubkey) || lpb(key_sig).
 // For op 4..7 the five base strings are NULL.
@@ -112,7 +112,7 @@ export function serializeLeaf(f) {
     case OP_REVOKE:
       return concatBytes(base, u64be(f.revokeSeq ?? 0), lp(f.reasonCode ?? null), lpb(f.evidenceHash ?? null));
     case OP_ENROLL:
-      return concatBytes(base, lp(f.nullifier ?? null), lp(f.iss ?? null), lp(f.aud ?? null), lp(f.kid ?? null), lpb(f.proof ?? null), lpb(f.saltCommitment ?? null), lpb(f.accountPubkey ?? null));
+      return concatBytes(base, lp(f.nullifier ?? null), lp(f.iss ?? null), lp(f.aud ?? null), lp(f.kid ?? null), lpb(f.proofHash ?? null), lpb(f.saltCommitment ?? null), lpb(f.accountPubkey ?? null));
     case OP_ISSUE:
       return concatBytes(base, lp(f.nullifier ?? null), u64be(f.epoch ?? 0), lpb(f.accountPubkey ?? null), lpb(f.blindedHash ?? null), lpb(f.accountSig ?? null));
     case OP_KEY:
@@ -478,8 +478,10 @@ function isHex(v, chars) {
 
 // The ENROLL proof column, base64 on the wire. The spec names the key `proof`; `proof_b64`
 // is read too so a projection spelling it that way still hashes.
-export function proofBase64(e) {
-  return e.proof ?? e.proof_b64 ?? null;
+// Where the ENROLL proof's bytes are found: the leaf carries only their digest, and
+// the object is stored under it (docs/transparency.md "Enrolment proofs").
+export function proofObjectPath(hashHex) {
+  return `proofs/${hashHex.slice(0, 2)}/${hashHex}.bin`;
 }
 
 function isEpoch(v) {
@@ -496,7 +498,7 @@ function identityLeafShape(e) {
     if (typeof e.iss !== "string" || !e.iss) v.push("enroll iss missing");
     if (typeof e.aud !== "string" || !e.aud) v.push("enroll aud missing");
     if (typeof e.kid !== "string" || !e.kid) v.push("enroll kid missing");
-    if (typeof proofBase64(e) !== "string" || !proofBase64(e)) v.push("enroll proof missing");
+    if (!isHex(e.proof_hash, 64)) v.push("enroll proof_hash is not 32 bytes hex");
     if (!isHex(e.salt_commitment, 64)) v.push("enroll salt_commitment is not 32 bytes hex");
     if (!isHex(e.account_pubkey, 64)) v.push("enroll account_pubkey is not 32 bytes hex");
   } else if (e.op === OP_ISSUE) {
@@ -761,7 +763,7 @@ export function leafHashFromEntry(e) {
       iss: e.iss ?? null,
       aud: e.aud ?? null,
       kid: e.kid ?? null,
-      proof: proofBase64(e) == null ? null : base64ToBytes(proofBase64(e)),
+      proofHash: bytesOrNull(e.proof_hash),
       saltCommitment: bytesOrNull(e.salt_commitment),
       epoch: e.epoch == null ? 0 : BigInt(e.epoch),
       clientPubkey: bytesOrNull(e.client_pubkey),

@@ -65,6 +65,7 @@ const ACCOUNT_PUBKEY = new Uint8Array(32).fill(0x55);
 const BLINDED_HASH = new Uint8Array(32).fill(0x66);
 const ACCOUNT_SIG = new Uint8Array(64).fill(0x77);
 const PROOF = hexToBytes("aabbccdd");
+const PROOF_HASH = await sha256(PROOF);
 const NONCE = "0123456789abcdef";
 const EPOCH = 1234n;
 const TS = 1700000040000;
@@ -79,8 +80,8 @@ check(userRef === "02d449a31fbb267c8f352e9968a79e3e5fc95c1bbeaa502fd6454ebde5a4b
 const votes = { seq: 5n, ts: TS, op: 1, site: "github", targetId: "gh:o/r", reaction: "👍", prevReaction: null, userRef, clientPubkey: PUBKEY, clientSig: SIG, clientNonce: NONCE };
 check(bytesToHex(await leafHash(votes)) === "65bd0426b4e0344ef456e1817b4eb0841fe1eaf25f2176a67033631f7a0edbe4", "KAT signed vote leaf_hash");
 const nulls = { site: null, targetId: null, reaction: null, prevReaction: null, userRef: null };
-const enroll = { seq: 1n, ts: TS, op: 5, ...nulls, nullifier, iss: ISS, aud: AUD, kid: "kid-1", proof: PROOF, saltCommitment, accountPubkey: ACCOUNT_PUBKEY };
-check(bytesToHex(await leafHash(enroll)) === "ecf646fc2378ef629e4054805f9020711bbd430aad2ee987b6ce5dc7d4b0a48b", "KAT ENROLL leaf_hash");
+const enroll = { seq: 1n, ts: TS, op: 5, ...nulls, nullifier, iss: ISS, aud: AUD, kid: "kid-1", proofHash: PROOF_HASH, saltCommitment, accountPubkey: ACCOUNT_PUBKEY };
+check(bytesToHex(await leafHash(enroll)) === "aa1493fdf668f6b4fe168de9356433de207756ce26253a43570976c80b3d7e1a", "KAT ENROLL leaf_hash");
 const issue = { seq: 2n, ts: TS, op: 6, ...nulls, nullifier, epoch: EPOCH, accountPubkey: ACCOUNT_PUBKEY, blindedHash: BLINDED_HASH, accountSig: ACCOUNT_SIG };
 check(bytesToHex(await leafHash(issue)) === "8a083d322d68074c3a23efb598e4736365c9a28db1d18c9350f6d96674ce6250", "KAT ISSUE leaf_hash");
 const key = { seq: 4n, ts: TS, op: 7, ...nulls, epoch: EPOCH, clientPubkey: PUBKEY, keySig: KEY_SIG };
@@ -108,7 +109,13 @@ const rowVote = { seq: "5", ts: TS, op: 1, site: "github", target_id: "gh:o/r", 
 check(bytesToHex(await leafHashFromEntry(rowVote)) === bytesToHex(await leafHash(votes)), "row -> signed vote leaf_hash");
 const rowOld = { seq: "5", ts: TS, op: 1, site: "github", target_id: "gh:o/r", reaction: "👍", prev_reaction: null, user_ref: userRef };
 check(bytesToHex(await leafHashFromEntry(rowOld)) === bytesToHex(await leafHash(legacy)), "row without the identity fields (old shard line) -> legacy leaf_hash");
-const rowEnroll = { seq: "1", ts: TS, op: 5, site: null, target_id: null, reaction: null, prev_reaction: null, user_ref: "0".repeat(64), nullifier, iss: ISS, aud: AUD, kid: "kid-1", proof_b64: Buffer.from(PROOF).toString("base64"), salt_commitment: bytesToHex(saltCommitment), account_pubkey: bytesToHex(ACCOUNT_PUBKEY) };
+// The publisher omits a field the leaf does not carry rather than writing it null.
+// Both spellings have to reach the same leaf hash, or every line published before
+// that change would stop verifying.
+const rowSparse = { seq: "5", ts: TS, op: 1, site: "github", target_id: "gh:o/r", reaction: "👍", user_ref: userRef, client_pubkey: bytesToHex(PUBKEY), client_sig: bytesToHex(SIG), client_nonce: NONCE };
+check(bytesToHex(await leafHashFromEntry(rowSparse)) === bytesToHex(await leafHashFromEntry(rowVote)), "a row with its null keys omitted hashes the same as one that spells them out");
+
+const rowEnroll = { seq: "1", ts: TS, op: 5, site: null, target_id: null, reaction: null, prev_reaction: null, user_ref: "0".repeat(64), nullifier, iss: ISS, aud: AUD, kid: "kid-1", proof_hash: bytesToHex(PROOF_HASH), salt_commitment: bytesToHex(saltCommitment), account_pubkey: bytesToHex(ACCOUNT_PUBKEY) };
 check(bytesToHex(await leafHashFromEntry(rowEnroll)) === bytesToHex(await leafHash(enroll)), "row -> ENROLL leaf_hash (zero-sentinel user_ref is not hashed)");
 const rowIssue = { seq: "2", ts: TS, op: 6, site: null, target_id: null, reaction: null, prev_reaction: null, user_ref: "0".repeat(64), nullifier, epoch: "1234", account_pubkey: bytesToHex(ACCOUNT_PUBKEY), blinded_hash: bytesToHex(BLINDED_HASH), account_sig: bytesToHex(ACCOUNT_SIG) };
 check(bytesToHex(await leafHashFromEntry(rowIssue)) === bytesToHex(await leafHash(issue)), "row -> ISSUE leaf_hash (epoch as a string)");
@@ -120,10 +127,9 @@ check(bytesToHex(await leafHashFromEntry(rowKey)) === bytesToHex(await leafHash(
 // --- invariant A: identity leaf shapes ---------------------------------------------
 check(checkStructuralInvariants([rowEnroll, rowIssue, rowKey, rowVote]).length === 0, "invariant A: well-formed identity leaves and a signed vote pass");
 check(checkStructuralInvariants([{ ...rowEnroll, site: "github" }]).length === 1, "invariant A: an identity leaf carrying a vote field is flagged");
-check(checkStructuralInvariants([{ ...rowEnroll, proof_b64: null }]).length === 1, "invariant A: ENROLL without a proof is flagged");
+check(checkStructuralInvariants([{ ...rowEnroll, proof_hash: null }]).length === 1, "invariant A: ENROLL without a proof digest is flagged");
 check(checkStructuralInvariants([{ ...rowEnroll, account_pubkey: null }]).length === 1, "invariant A: ENROLL without an account_pubkey is flagged");
-const { proof_b64: proofOnly, ...rowEnrollSpec } = { ...rowEnroll, proof: rowEnroll.proof_b64 };
-check(bytesToHex(await leafHashFromEntry(rowEnrollSpec)) === bytesToHex(await leafHash(enroll)) && proofOnly !== undefined, "row with the spec key `proof` (not proof_b64) -> ENROLL leaf_hash");
+check(checkStructuralInvariants([{ ...rowEnroll, proof_hash: "aa" }]).length === 1, "invariant A: an ENROLL proof digest that is not 32 bytes is flagged");
 check(checkStructuralInvariants([{ ...rowKey, key_sig: "33".repeat(255) }]).length === 1, "invariant A: KEY with a short key_sig is flagged");
 check(checkStructuralInvariants([{ ...rowIssue, epoch: null }]).length === 1, "invariant A: ISSUE without an epoch is flagged");
 check(checkStructuralInvariants([rowIssueBare]).length === 3, "invariant A: ISSUE missing account_pubkey, blinded_hash and account_sig is flagged three times");

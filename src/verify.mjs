@@ -11,7 +11,7 @@ import { pathToFileURL } from "node:url";
 import { checkConsistencyChain, checkpointForShardCoverage, verifyCheckpointArchive } from "./checks/archive.mjs";
 import { checkCheckpointSignature, checkFreshness, checkGithubAnchor } from "./checks/checkpoint.mjs";
 import { checkIdentityTrack } from "./checks/identity-track.mjs";
-import { checkEntriesSource, checkHashChainReplay, checkMerkleRoot, fetchEntries, rehashLeaves } from "./checks/leaves.mjs";
+import { checkEntriesSource, checkHashChainReplay, checkMerkleRoot, fetchEntries, manifestBase, rehashLeaves } from "./checks/leaves.mjs";
 import { verifyOts } from "./checks/ots.mjs";
 import { verifyRekor } from "./checks/rekor.mjs";
 import { checkRevocationFeed, checkStructure, checkWipes, reportFold } from "./checks/semantics.mjs";
@@ -42,6 +42,17 @@ const PINNED_ISSUERS = DEFAULT_ISSUERS;
 // keys/enroll-v1.json records the bb the operator proved with; a drift from the
 // version pinned in package.json is reported next to the proof check.
 const BB_JS_VERSION = createRequire(import.meta.url)("../package.json").dependencies["@aztec/bb.js"];
+
+// Where the proof bodies are fetched from: the same host the shard bodies come from.
+// A run that never needed the manifest still has to find them, so the lookup falls
+// back to the repository's own mirrors.json.
+async function proofsBaseFor(o) {
+  try {
+    return await manifestBase(o.repo, o.entriesBase);
+  } catch {
+    return null;
+  }
+}
 
 async function main() {
   const parsed = parseCli(process.argv.slice(2));
@@ -141,6 +152,8 @@ async function main() {
     section("Identity");
     await checkIdentityTrack(entries, {
       repo: o.repo,
+      // The proof bodies sit beside the shard bodies, wherever those are served from.
+      proofsBase: await proofsBaseFor(o),
       keysPerAccount: o.keysPerAccount,
       allowUnsignedVotes: o.allowUnsignedVotes,
       blindPubkey,

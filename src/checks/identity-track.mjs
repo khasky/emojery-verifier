@@ -8,7 +8,7 @@ import { check, skipCheck } from "../outcomes.mjs";
 import { details, out, phase } from "../report.mjs";
 import { checkIdentityInvariants, verifyIdentitySignatures } from "../transparency.mjs";
 
-export async function checkIdentityTrack(entries, { repo, keysPerAccount, allowUnsignedVotes, blindPubkey, proofsDisabled, enrollVkHash, saltCommitment, issuers, audiences, bbVersion }) {
+export async function checkIdentityTrack(entries, { repo, proofsBase, keysPerAccount, allowUnsignedVotes, blindPubkey, proofsDisabled, enrollVkHash, saltCommitment, issuers, audiences, bbVersion }) {
   const identity = await checkIdentityInvariants(entries, { keysPerAccount });
   out(`identity: ${identity.enrolls} enroll, ${identity.issues} issue, ${identity.keys} key leaf(s); ${identity.signedVotes} signed and ${identity.unsignedVotes} unsigned vote(s)`);
   details(identity.violations, 20);
@@ -38,6 +38,7 @@ export async function checkIdentityTrack(entries, { repo, keysPerAccount, allowU
   let proving = null;
   const proofs = await verifyEnrollProofs(entries, {
     repo,
+    proofsBase,
     getJson,
     getBytes,
     vkSha256: enrollVkHash,

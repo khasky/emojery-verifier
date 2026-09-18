@@ -18,7 +18,7 @@ function padSeq(n) {
 // Where the shard bodies live when the manifest does not say and --entries-base was
 // not passed. Any copy will do: the manifest's sha256 decides whether the bytes are
 // the published ones, not the host they came from.
-async function manifestBase(repo, override) {
+export async function manifestBase(repo, override) {
   if (override) return override.endsWith("/") ? override : `${override}/`;
   let mirrors;
   try {

@@ -12,7 +12,7 @@
 // The prover is @aztec/bb.js, imported lazily: the rest of the audit stays on
 // @noble/ed25519 alone, and --no-proofs skips this file entirely.
 
-import { base64ToBytes, bytesToHex, hexToBytes, OP_ENROLL, proofBase64, sha256, utf8 } from "./transparency.mjs";
+import { bytesToHex, hexToBytes, OP_ENROLL, proofObjectPath, sha256, utf8 } from "./transparency.mjs";
 
 // The circuit's RSA parameters as noir-jwt (v0.5.1) lays them out: an RSA-2048 value is
 // 18 little-endian limbs of 120 bits, and the Barrett reduction parameter is
@@ -157,7 +157,7 @@ async function liveJwksFor(iss, getJson, cache) {
 // cross-check, the provider). Returns
 //   { status: "skip" | "pass" | "fail", reason, checked, failed, notes[] }
 // where a skip names the pin or artifact that is missing.
-export async function verifyEnrollProofs(entries, { repo, getJson, getBytes, vkSha256, saltCommitment, issuers, audiences, bbVersion, liveJwks = true, onProgress }) {
+export async function verifyEnrollProofs(entries, { repo, proofsBase, getJson, getBytes, vkSha256, saltCommitment, issuers, audiences, bbVersion, liveJwks = true, onProgress }) {
   const enrolls = entries.filter((e) => e.op === OP_ENROLL);
   const notes = [];
   const result = (status, reason, extra = {}) => ({ status, reason, checked: 0, failed: 0, notes, ...extra });
@@ -246,10 +246,24 @@ export async function verifyEnrollProofs(entries, { repo, getJson, getBytes, vkS
         fail(e, `provider key ${keyPath} unusable`);
         continue;
       }
+      // The leaf commits to the proof by digest, so the body is fetched and checked
+      // against it before bb is handed anything: bytes that are not the ones the log
+      // committed to must never reach the verifier as "a proof that did not verify".
+      let proof;
+      try {
+        proof = await getBytes(`${proofsBase}${proofObjectPath(e.proof_hash)}`);
+      } catch (err) {
+        fail(e, `proof body ${proofObjectPath(e.proof_hash)} could not be read (${err.message})`);
+        continue;
+      }
+      if (bytesToHex(await sha256(proof)) !== e.proof_hash) {
+        fail(e, `proof body ${proofObjectPath(e.proof_hash)} does not hash to the digest the leaf commits to`);
+        continue;
+      }
       let ok = false;
       try {
         const publicInputs = enrollPublicInputs({ modulus, iss: e.iss, aud: e.aud, nullifierHex: e.nullifier, saltCommitmentHex: e.salt_commitment, accountPubkeyHex: e.account_pubkey });
-        ok = await backend.verifyProof({ proof: base64ToBytes(proofBase64(e)), publicInputs, verificationKey: vk });
+        ok = await backend.verifyProof({ proof, publicInputs, verificationKey: vk });
       } catch (err) {
         fail(e, `proof verification threw: ${err.message}`);
         continue;
