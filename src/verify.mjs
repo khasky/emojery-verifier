@@ -28,10 +28,16 @@ const PINNED_PUBKEY_B64 = "XeLiQ5CMhsjLmnQbIWSwWHNjcJg01Zs0veQDiwluT6c=";
 // naming the pin. PINNED_ENROLL_VK_SHA256 is the SHA-256 of keys/enroll-v1.vk in the
 // log repository; PINNED_BLIND_PUBKEY_SPKI_B64 is also published there as
 // keys/blind-rsa-v1.json.
-const PINNED_BLIND_PUBKEY_SPKI_B64 = "";
+const PINNED_BLIND_PUBKEY_SPKI_B64 = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlbzZGsfKa/Yv3Kw2S4pa+h1k+NsIc4wxfZUNCZgZKfAKHCKqCxIEJrFPk9L1JYLMwCbStps3gkPT8eEtlAzReMZQfwuGvDymUqBXaKBRKMnxzQVSdNpnfQQFmvbomCvj69AcfjdYrJAoi05EltXrhoMGZyQkwtKKYAjZ2J8bZPuNvx0a0A2kpfz4l7vhaM55Dg3CWgwLkRasZyPen7ZaEYhvfTQ4Nf58wpf3+TJdFjwYxCBuBrcd9n13uGqSHRXWPDNu6CdzPRAO2a5Dw1YfnsT1+K8cqyMMe5lzTx7uZ5swsIW6crA0E38yKQdRYQ+djgWTpLNyk56CgE4YJMDsAQIDAQAB";
 const PINNED_ENROLL_VK_SHA256 = "09d386a1e439aea0f122a9599ae2fbde5ea79f30bac3e5661c106014ee92bfbb";
-const PINNED_SALT_COMMITMENT = "";
-const PINNED_AUDIENCES = [];
+const PINNED_SALT_COMMITMENT = "a36bc4182f1bad025d77733db207fe53a2a43d561c70b2fea65300a4fc338735";
+const PINNED_AUDIENCES = [
+  "368200727057-40v0prpc56gpqiv6oiu3rval6su4jbuf.apps.googleusercontent.com",
+  "app.emojery.web",
+  "54fe9a8a-4525-42b2-917a-49958391f7c9",
+  "vjid5zxm5yuyf5moohb74waeaq2m38",
+  "12089821032774.12094084769249",
+];
 const PINNED_ISSUERS = DEFAULT_ISSUERS;
 
 // keys/enroll-v1.json records the bb the operator proved with; a drift from the
