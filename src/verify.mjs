@@ -36,7 +36,6 @@ const PINNED_AUDIENCES = [
   "app.emojery.web",
   "54fe9a8a-4525-42b2-917a-49958391f7c9",
   "vjid5zxm5yuyf5moohb74waeaq2m38",
-  "12089821032774.12094084769249",
 ];
 const PINNED_ISSUERS = DEFAULT_ISSUERS;
 

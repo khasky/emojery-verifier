@@ -48,9 +48,10 @@ export const DEFAULT_ISSUERS = [
   { provider: "apple", iss: "https://appleid.apple.com" },
   { provider: "microsoft", iss: "^https://login\\.microsoftonline\\.com/[0-9a-f-]{36}/v2\\.0$" },
   // LinkedIn and Discord are absent: they sign with RSA-4096, which enroll-v1 cannot prove.
-  // Facebook is absent too: its app cannot leave Meta's development mode.
+  // Facebook is absent too: its app cannot leave Meta's development mode. So is Slack:
+  // its id_token writes the issuer as https:\/\/slack.com, and enroll-v1 matches a claim
+  // against the payload's bytes.
   { provider: "twitch", iss: "https://id.twitch.tv/oauth2" },
-  { provider: "slack", iss: "https://slack.com" },
 ];
 
 export function parseIssuersFlag(text) {
