@@ -197,7 +197,9 @@ const revoke = (seq) => ({ seq: String(seq), ts: 1, revoke_seq: "1", reason_code
     if (u.host === "api.github.com") return { body: [{ name: "000000000001-000000010000.ndjson" }] };
     if (u.pathname.endsWith("/entries/mirrors.json")) return { body: { base } };
     if (u.pathname.includes("/entries/manifest/")) return { text: manifest(sha) };
-    if (u.pathname.includes("/entries/")) return { text: bodyText };
+    // Only under the shard's own range name: the manifest line covers seqs 1-3, the
+    // shard that holds them is still named for the 10,000 it will grow to.
+    if (u.pathname.endsWith("/entries/000000000001-000000010000.ndjson")) return { text: bodyText };
     return { status: 404 };
   };
 
@@ -226,7 +228,7 @@ const revoke = (seq) => ({ seq: String(seq), ts: 1, revoke_seq: "1", reason_code
   } catch (e) {
     digestThrew = e.message;
   }
-  check(digestThrew.includes("sha256") && digestThrew.includes("000000000001-000000000003"), `a body that does not match its manifest digest is refused (${digestThrew.slice(0, 60)})`);
+  check(digestThrew.includes("sha256") && digestThrew.includes("000000000001-000000010000"), `a body that does not match its manifest digest is refused (${digestThrew.slice(0, 60)})`);
 }
 
 // --- 7. an empty log is a state, not a failure ------------------------------

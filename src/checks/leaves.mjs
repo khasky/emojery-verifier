@@ -89,7 +89,10 @@ export async function fetchEntries(api, repo, treeSize, { mode, base } = {}) {
     const from = await manifestBase(repo, base);
     for (const shard of shards) {
       if (Number(shard.from) > treeSize) break;
-      const name = `entries/${padSeq(Number(shard.from))}-${padSeq(Number(shard.to))}.ndjson`;
+      // Named by the shard's whole range, not the leaves it currently holds: an open
+      // shard keeps the same name while its tail grows.
+      const start = Number(shard.from);
+      const name = `entries/${padSeq(start)}-${padSeq(start + SHARD_SIZE - 1)}.ndjson`;
       const body = await getBytes(`${from}${name}`);
       // The digest is what makes the body's origin irrelevant - and it fails a
       // truncated download here, rather than as an unexplained root mismatch later.
