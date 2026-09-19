@@ -34,11 +34,11 @@ All five strings are NULL on `op=4..7`. After `base`:
 | --- | --- |
 | `op=1..3`, signed | `lpb(client_pubkey32) \|\| lpb(client_sig64) \|\| lp(client_nonce)` (a 1.0.0 vote appends nothing) |
 | `op=4` | `u64be(revoke_seq) \|\| lp(reason_code) \|\| lpb(evidence_hash)` |
-| `op=5` ENROLL | `lp(nullifier) \|\| lp(iss) \|\| lp(aud) \|\| lp(kid) \|\| lpb(proof) \|\| lpb(salt_commitment32) \|\| lpb(account_pubkey32)` |
+| `op=5` ENROLL | `lp(nullifier) \|\| lp(iss) \|\| lp(aud) \|\| lp(kid) \|\| lpb(proof_hash32) \|\| lpb(salt_commitment32) \|\| lpb(account_pubkey32)` |
 | `op=6` ISSUE | `lp(nullifier) \|\| u64be(epoch) \|\| lpb(account_pubkey32) \|\| lpb(blinded_hash32) \|\| lpb(account_sig64)` |
 | `op=7` KEY | `u64be(epoch) \|\| lpb(client_pubkey32) \|\| lpb(key_sig256)` |
 
-`nullifier` is hashed as its 64-character hex string (`lp`), the byte fields as raw bytes (`lpb`). On the wire (`/log/entries` and the shards) `account_pubkey`, `account_sig` and `blinded_hash` are hex or `null`; a row that lacks the key hashes it as NULL. A row may carry the ENROLL proof as `proof` or `proof_b64`.
+`nullifier` is hashed as its 64-character hex string (`lp`), the byte fields as raw bytes (`lpb`). On the wire (`/log/entries` and the shards) `account_pubkey`, `account_sig` and `blinded_hash` are hex where the leaf carries them and ABSENT where it does not - a field is omitted rather than spelled out as `null`, and a reader must treat the two the same: a row that lacks the key hashes it as NULL. An ENROLL row carries `proof_hash`, the SHA-256 of its proof, as 64 hex characters; the proof itself is 14 KB and is not in the row (see "Enrolment proofs" below).
 
 ```
 leaf_hash  = SHA256(0x00 || leaf bytes)
@@ -100,7 +100,7 @@ The per-`(site, target_id, reaction)` counters are folded from the verified leav
 
 ### Invariants
 
-- **A. per-leaf validity.** `op=1` has `reaction` and no `prev_reaction`; `op=2` has both, distinct; `op=3` has `prev_reaction` and no `reaction`; `op=4` has a `revoke_seq`; a vote with a `client_pubkey` has a 32-byte key, a 64-byte signature and a non-empty nonce; identity leaves carry no vote field and their byte fields have the right widths (`key_sig` 256 bytes, `account_sig` 64, ENROLL has a proof and an account key, ISSUE has an epoch); any other `op` is unexpected.
+- **A. per-leaf validity.** `op=1` has `reaction` and no `prev_reaction`; `op=2` has both, distinct; `op=3` has `prev_reaction` and no `reaction`; `op=4` has a `revoke_seq`; a vote with a `client_pubkey` has a 32-byte key, a 64-byte signature and a non-empty nonce; identity leaves carry no vote field and their byte fields have the right widths (`key_sig` 256 bytes, `account_sig` 64, ENROLL has a 32-byte proof digest and an account key, ISSUE has an epoch); any other `op` is unexpected.
 - **B. per-`(user_ref, site, target)` state machine.** No double add while a reaction is active; a change or removal names the currently active reaction as `prev_reaction`. A change or removal may be the first event seen for an author, which alone is not a violation.
 - **C. non-negativity.** No `(site, target, reaction)` count is ever driven below zero.
 - **D. revocation targets.** A `revoke_seq` must name an earlier `op=1..3` leaf: not dangling, not forward, not the revoke itself.
@@ -109,7 +109,7 @@ The per-`(site, target_id, reaction)` counters are folded from the verified leav
 - **G. signed votes.** A signed vote names a `client_pubkey` an earlier KEY leaf registered, `user_ref == SHA256(client_pubkey)`, and no nonce repeats under one key. Unsigned votes fail unless `--allow-unsigned-votes`.
 - **H. epoch keys.** Per epoch, `count(KEY) <= count(ISSUE)`; no pubkey registers twice; every `key_sig` verifies under the blind key.
 - **I. grants.** Every ISSUE cites an earlier ENROLL with the same `(nullifier, account_pubkey)` pair, its `blinded_hash` is unique across ISSUE leaves, its `account_sig` verifies under that account key, and no `(nullifier, epoch)` holds more than `--keys-per-account` grants (default 10, `0` lifts the bound; a growth policy, since every grant carries the account's own signature, so exceeding it means one account asked for many keys, not that the operator minted any). An ENROLL `(nullifier, account_pubkey)` pair is unique; a reinstall makes a new account key and so a new ENROLL under the same nullifier.
-- **J. enrollment proofs.** Every ENROLL `proof` verifies (UltraHonk, via `@aztec/bb.js`) under the pinned verification key `keys/enroll-v1.vk` from the log repository, with public inputs the verifier rebuilds itself (below). The `iss` must be an admitted issuer and the `aud` a pinned client id. The archived provider key `jwks/<provider>/<kid>.json` is cross-checked against the provider's live JWKS: unreachable is a note, a key the provider has since rotated out is a note, a different modulus is a failure. If `keys/enroll-v1.json` declares a `public_inputs` layout, it must end with `account_pubkey[32]`.
+- **J. enrollment proofs.** The body behind every ENROLL `proof_hash` is fetched, refused unless it hashes to that digest, and then verifies (UltraHonk, via `@aztec/bb.js`) under the pinned verification key `keys/enroll-v1.vk` from the log repository, with public inputs the verifier rebuilds itself (below). The `iss` must be an admitted issuer and the `aud` a pinned client id. The archived provider key `jwks/<provider>/<kid>.json` is cross-checked against the provider's live JWKS: unreachable is a note, a key the provider has since rotated out is a note, a different modulus is a failure. If `keys/enroll-v1.json` declares a `public_inputs` layout, it must end with `account_pubkey[32]`.
 
 ### ENROLL public inputs
 
@@ -135,11 +135,24 @@ What a passing proof establishes: the operator held an RS256 `id_token` signed b
 
 ### Leaves
 
-`GET /log/entries?from=&to=` serves up to 1000 rows per page. The log repository publishes the same rows as `entries/<start>-<end>.ndjson` shards of 10000 leaves (`000000000001-000000010000.ndjson`, ...), not charged against the API's per-IP `/log/*` rate limit. The shards are published in batches and trail the live checkpoint by up to a batch of leaves; a shard that does not exist yet (404) is that window, any other failure is a broken mirror. With `--entries repo --api` the missing tail is fetched from the API; with `--entries repo` alone the run steps back to the newest archived checkpoint the shards fully cover, names it and the tip, and audits that one (the tip's own Rekor sidecar is still checked). A mirror whose shards reach no archived checkpoint reports the Merkle check as a skip: incomplete shards are not evidence against the log. The whole log is held in memory (about a gigabyte around a million leaves); past a few million, fold and verify from a streamed source instead.
+`GET /log/entries?from=&to=` serves up to 1000 rows per page. The same rows are published as `<start>-<end>.ndjson` shards of 10000 leaves (`000000000001-000000010000.ndjson`, ...), not charged against the API's per-IP `/log/*` rate limit.
+
+Where those shards live depends on the log. A log may keep them in the repository itself (`entries/<start>-<end>.ndjson`, read with `--entries repo`), or keep only a commitment to them and serve the bodies from object storage:
+
+- `entries/manifest/<start>-<end>.ndjson` — one line per shard, `{from, to, count, bytes, sha256}`, covering 1000 shards each. Read with `--entries manifest`. The file names are DERIVED from the range, not listed: no directory listing, so no GitHub API and no rate limit stands between a reader and the manifest.
+- `entries/mirrors.json` — `{"base": "<url>"}`, where the bodies are served from. `--entries-base <url>` overrides it. A shard is admitted only if its bytes hash to the `sha256` the manifest committed to, so which host served it decides nothing; anyone may publish a copy and name it in their own file.
+
+Either way the shards are published in batches and trail the live checkpoint by up to a batch of leaves; a shard that does not exist yet (404) is that window, any other failure is a broken mirror. With `--api` the missing tail is fetched from the API; without it the run steps back to the newest archived checkpoint the shards fully cover, names it and the tip, and audits that one (the tip's own Rekor sidecar is still checked). A mirror whose shards reach no archived checkpoint reports the Merkle check as a skip: incomplete shards are not evidence against the log. The whole log is held in memory (about a gigabyte around a million leaves); past a few million, fold and verify from a streamed source instead.
+
+### Enrolment proofs
+
+An ENROLL leaf names its proof by digest rather than carrying it: a proof is 14 KB, and a line carrying one costs every reader of the shard that much whether or not they check proofs. The body is served from the entries base as `proofs/<first two hex of the digest>/<digest>.bin`, and the verifier refuses any body that does not hash to the digest the leaf committed to before it reaches the prover — bytes that are not the ones the log committed to must never be reported as "a proof that did not verify".
+
+Proof bodies are published in the same batches as the shard bodies, so the newest ENROLL leaves routinely have none yet. A 404 past what the manifest says is mirrored is that window and is counted, not failed; a 404 inside it is a failure, and so is one on a log whose manifest cannot be read at all.
 
 `GET /log/checkpoint` answers `404 {"error":"no_checkpoint"}` for a log that has never signed anything; the verifier reports that as an empty log (PASS, `checks: { log: "empty" }`). Any other 404 fails the run.
 
-The GitHub Contents API lists a directory up to 1000 entries without paginating; past that the verifier re-lists through the Git Trees API, and a Trees listing that itself truncates is reported so the archive and Rekor completeness checks are read as "over the listed subset". `GITHUB_TOKEN` lifts the unauthenticated quota; a rate-limited listing is a skip. Transient HTTP failures (429, 5xx) on the API and the raw repository are retried up to 4 times, honouring `Retry-After`.
+The GitHub Contents API lists a directory up to 1000 entries without paginating; past that the verifier re-lists through the Git Trees API, and a Trees listing that itself truncates is reported so the archive and Rekor completeness checks are read as "over the listed subset". `GITHUB_TOKEN` lifts the unauthenticated quota; a rate-limited listing is a skip. The entries manifest is never listed - its file names are derived - so reading the leaves does not depend on that quota at all. Transient HTTP failures (429, 5xx) on the API and the raw repository are retried up to 4 times, honouring `Retry-After`.
 
 ### Revocation feed
 
