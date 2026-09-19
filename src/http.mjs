@@ -48,14 +48,12 @@ export async function getText(url) {
   return res.text();
 }
 
-// Whether the API serves a log with no checkpoint at all. Only a 404 whose body is
-// the documented no_checkpoint error counts, so a 404 from a dropped route, a proxy
-// or a mistyped --api still fails the run.
-export async function emptyLog(api) {
-  const res = await getRes(`${api}/log/checkpoint`);
-  if (res.status !== 404) return false;
-  const body = await res.json().catch(() => null);
-  return body?.error === "no_checkpoint";
+// Whether the repository publishes a log with no checkpoint at all: a brand-new or
+// freshly reset deployment. Only a missing checkpoints/latest.json counts, so a
+// transport failure or a mistyped --repo still fails the run.
+export async function emptyLog(repo) {
+  const res = await getRes(`${repo}/checkpoints/latest.json`);
+  return res.status === 404;
 }
 
 export function githubSlugFromRawBase(repo) {

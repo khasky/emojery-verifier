@@ -7,10 +7,6 @@ import { check, record, skipCheck } from "../outcomes.mjs";
 import { detail, details, phase } from "../report.mjs";
 import { bytesToHex, checkHashChain, leafHashFromEntry, merkleRootFromLeaves, sha256 } from "../transparency.mjs";
 
-export const ENTRIES_PAGE = 1000;
-// The published entries/ shards are this many leaves wide; their file names derive from it.
-const SHARD_SIZE = 10_000;
-
 function padSeq(n) {
   return String(n).padStart(12, "0");
 }
@@ -31,146 +27,84 @@ export async function manifestBase(repo, override) {
   return base.endsWith("/") ? base : `${base}/`;
 }
 
-// One manifest file per this many leaves, matching what the publisher writes. Both
-// halves derive the name from the range rather than recording it, so neither side
-// has to enumerate anything.
-const MANIFEST_SPAN = SHARD_SIZE * 1_000;
-
-function manifestPath(start) {
-  return `entries/manifest/${padSeq(start)}-${padSeq(start + MANIFEST_SPAN - 1)}.ndjson`;
+// Named for the first leaf it covers. A chunk holds whatever one publish had, so a
+// file spans no predictable range - but it needs no directory listing either: the
+// first file is leaf 1, and the next one starts at the `to` of its last line.
+function manifestPath(firstLeaf) {
+  return `entries/manifest/${padSeq(firstLeaf)}.ndjson`;
 }
 
-// The manifest: one line per shard, {from, to, count, bytes, sha256}, in files of
-// entries/manifest/ named by the leaf range they cover. The shard's own name derives
-// from its range, so no line carries a URL and a mirror needs no manifest of its own.
-//
-// Read by DERIVED path, never by listing the directory: a listing means the GitHub
-// contents API, rate-limited to 60 an hour per IP unauthenticated - which a shared CI
-// address reaches routinely. A mode whose whole point is auditing from a mirror
-// cannot depend on api.github.com answering, and a listing that fails used to read as
-// "this log publishes nothing", which is a far worse answer than a 404 per file.
-async function readManifest(repo, treeSize) {
+// The manifest: one line per chunk, {from, to, count, bytes, sha256}, chained across
+// files as above. Read by DERIVED path, never by listing the directory: a listing
+// means the GitHub contents API, rate-limited to 60 an hour per IP unauthenticated -
+// which a shared CI address reaches routinely. A mode whose whole point is auditing
+// from a mirror cannot depend on api.github.com answering.
+async function readManifest(repo) {
   const shards = [];
-  for (let start = 1; start <= treeSize; start += MANIFEST_SPAN) {
+  for (let firstLeaf = 1; ; ) {
     let text;
     try {
-      text = await getText(`${repo}/${manifestPath(start)}`);
+      text = await getText(`${repo}/${manifestPath(firstLeaf)}`);
     } catch (e) {
-      // A span with nothing published yet is the publisher's batching window, not a hole.
-      if (e.status === 404) continue;
-      throw new Error(`${manifestPath(start)} could not be read (${e.message})`);
+      // The chain ends at the first file that does not exist.
+      if (e.status === 404) break;
+      throw new Error(`${manifestPath(firstLeaf)} could not be read (${e.message})`);
     }
+    const lines = [];
     for (const line of text.split("\n")) {
       const t = line.trim();
       if (!t) continue;
-      shards.push(JSON.parse(t));
+      lines.push(JSON.parse(t));
     }
+    const last = lines[lines.length - 1];
+    if (!last) break;
+    shards.push(...lines);
+    const next = Number(last.to) + 1;
+    // The chain only ever moves forward. A file whose last line does not advance
+    // past its own first leaf is malformed, and following it would loop.
+    if (!(next > firstLeaf)) throw new Error(`${manifestPath(firstLeaf)} ends at leaf ${last.to}, which does not advance the manifest chain`);
+    firstLeaf = next;
   }
-  shards.sort((a, b) => Number(a.from) - Number(b.from));
   return shards;
 }
 
 // The highest seq the published shards reach. Bodies are batched, so the mirror
 // routinely stops short of the signed tip, and a leaf past this is not missing -
 // it is not published yet. Null when this log publishes no manifest at all.
-export async function manifestCoverage(repo, treeSize) {
+export async function manifestCoverage(repo) {
   if (!repo) return null;
   try {
-    const shards = await readManifest(repo, treeSize);
+    const shards = await readManifest(repo);
     return shards.reduce((high, s) => Math.max(high, Number(s.to)), 0);
   } catch {
     return null;
   }
 }
 
-// Shards are published in batches, so a mirrored source routinely stops short of the
-// signed tip. With --api the gap is fetched; without it the run says so and the
-// caller steps back to the newest checkpoint the leaves in hand fully cover.
-async function fillTail(rows, api, treeSize, fetching, source) {
-  const covered = rows.length ? Number(rows[rows.length - 1].seq) : 0;
-  if (covered < treeSize) {
-    if (!api) {
-      detail(`${source} cover ${covered} of ${treeSize} leaves - the newest tail is not mirrored yet, and an offline audit cannot fill it`);
-      fetching.end(rows.length, treeSize);
-      return rows;
-    }
-    detail(`${source} cover ${covered} of ${treeSize} leaves - filling the tail from the API`);
-    for (let from = covered + 1; from <= treeSize; from += ENTRIES_PAGE) {
-      const to = Math.min(from + ENTRIES_PAGE - 1, treeSize);
-      rows.push(...((await getJson(`${api}/log/entries?from=${from}&to=${to}`)).entries ?? []));
-      fetching.tick(rows.length, treeSize);
-    }
-  }
-  fetching.end(rows.length, treeSize);
-  return rows;
-}
-
-// /log/entries-shaped rows [1..treeSize] from the API (paged), the log repo's
-// entries/ shards, or the manifest plus the bodies it names. The whole log is held in
-// memory: the fold, the invariants and the archive replay each need the full set.
-// Around a million leaves that is about a gigabyte of heap; past a few million, fold
-// and verify from a streamed source instead.
-export async function fetchEntries(api, repo, treeSize, { mode, base } = {}) {
-  const entriesMode = mode ?? "api";
+// The leaves [1..treeSize]: every chunk the manifest names, fetched from the entries
+// base and admitted only if its bytes hash to the digest the repository committed to.
+// The whole log is held in memory: the fold, the invariants and the archive replay
+// each need the full set. Around a million leaves that is about a gigabyte of heap;
+// past a few million, fold and verify from a streamed source instead.
+export async function fetchEntries(repo, treeSize, base) {
   const rows = [];
-  const fetching = phase(entriesMode === "api" ? "fetching leaves" : "reading entries shards");
-  if (entriesMode === "manifest") {
-    const shards = await readManifest(repo, treeSize);
-    const from = await manifestBase(repo, base);
-    for (const shard of shards) {
-      if (Number(shard.from) > treeSize) break;
-      // Named by the shard's whole range, not the leaves it currently holds: an open
-      // shard keeps the same name while its tail grows.
-      const start = Number(shard.from);
-      const name = `entries/${padSeq(start)}-${padSeq(start + SHARD_SIZE - 1)}.ndjson`;
-      const body = await getBytes(`${from}${name}`);
-      // The digest is what makes the body's origin irrelevant - and it fails a
-      // truncated download here, rather than as an unexplained root mismatch later.
-      const got = bytesToHex(await sha256(body));
-      if (got !== shard.sha256) throw new Error(`${name}: sha256 ${got} != ${shard.sha256} declared in the manifest`);
-      for (const line of new TextDecoder().decode(body).split("\n")) {
-        const t = line.trim();
-        if (!t) continue;
-        const e = JSON.parse(t);
-        if (Number(e.seq) <= treeSize) rows.push(e);
-      }
-      fetching.tick(rows.length, treeSize);
+  const fetching = phase("reading entries chunks");
+  const shards = await readManifest(repo);
+  const from = await manifestBase(repo, base);
+  for (const shard of shards) {
+    if (Number(shard.from) > treeSize) break;
+    const name = `entries/${padSeq(Number(shard.from))}-${padSeq(Number(shard.to))}.ndjson`;
+    const body = await getBytes(`${from}${name}`);
+    // The digest is what makes the body's origin irrelevant - and it fails a
+    // truncated download here, rather than as an unexplained root mismatch later.
+    const got = bytesToHex(await sha256(body));
+    if (got !== shard.sha256) throw new Error(`${name}: sha256 ${got} != ${shard.sha256} declared in the manifest`);
+    for (const line of new TextDecoder().decode(body).split("\n")) {
+      const t = line.trim();
+      if (!t) continue;
+      const e = JSON.parse(t);
+      if (Number(e.seq) <= treeSize) rows.push(e);
     }
-    return fillTail(rows, api, treeSize, fetching, "the manifest");
-  }
-  if (entriesMode === "repo") {
-    for (let start = 1; start <= treeSize; start += SHARD_SIZE) {
-      const path = `entries/${padSeq(start)}-${padSeq(start + SHARD_SIZE - 1)}.ndjson`;
-      let text;
-      try {
-        text = await getText(`${repo}/${path}`);
-      } catch (e) {
-        // A shard that does not exist yet is the publisher's batching window (a young
-        // log has a signed checkpoint and no shard); the tail fills from the API below.
-        // Any other transport failure fails the run.
-        if (e.status === 404) break;
-        throw new Error(`entries shard ${path} could not be read (${e.message})`);
-      }
-      for (const line of text.split("\n")) {
-        const t = line.trim();
-        if (!t) continue;
-        const e = JSON.parse(t);
-        if (Number(e.seq) <= treeSize) rows.push(e);
-      }
-      fetching.tick(rows.length, treeSize);
-    }
-    // A log that publishes a manifest keeps no shard in git at all, so this mode
-    // reads nothing and every leaf-derived check reports a skip - a PASS that
-    // audited none of the contents. Name the mode that does read them instead.
-    if (rows.length === 0 && (await manifestCoverage(repo, treeSize)) > 0) {
-      throw new Error("entries/ holds no shard while entries/manifest/ does: this log commits to shard digests and serves the bodies from the mirror - read it with --entries manifest");
-    }
-    return fillTail(rows, api, treeSize, fetching, "entries/ shards");
-  }
-  for (let from = 1; from <= treeSize; from += ENTRIES_PAGE) {
-    const to = Math.min(from + ENTRIES_PAGE - 1, treeSize);
-    const page = await getJson(`${api}/log/entries?from=${from}&to=${to}`);
-    rows.push(...page.entries);
     fetching.tick(rows.length, treeSize);
   }
   fetching.end(rows.length, treeSize);
@@ -195,12 +129,12 @@ export async function rehashLeaves(entries) {
 // `uncovered` means a mirror whose shards reach no published checkpoint: there is
 // no signed root to compare the leaves with, which is a gap in the mirror, not
 // evidence against the log.
-export async function checkMerkleRoot(leaves, cp, treeSize, entriesMode, uncovered) {
+export async function checkMerkleRoot(leaves, cp, treeSize, uncovered) {
   if (uncovered) {
-    skipCheck(`Merkle root (the ${leaves.length} mirrored leaves reach no published checkpoint; pass --api, or audit a mirror that carries one)`, "merkle_root");
+    skipCheck(`Merkle root (the ${leaves.length} published leaves reach no published checkpoint - the mirror is behind its own checkpoints)`, "merkle_root");
     return;
   }
-  check(leaves.length === treeSize, `fetched all ${treeSize} leaves (got ${leaves.length}, source: ${entriesMode})`, "merkle_root");
+  check(leaves.length === treeSize, `fetched all ${treeSize} leaves (got ${leaves.length})`, "merkle_root");
   const root = await merkleRootFromLeaves(leaves);
   check(bytesToHex(root) === cp.root_hash, "recomputed Merkle root == checkpoint root_hash", "merkle_root");
 }
@@ -210,27 +144,4 @@ export async function checkHashChainReplay(entries, leaves) {
   const breaks = await checkHashChain(entries, leaves);
   details(breaks, 5);
   check(breaks.length === 0, `hash chain replays from genesis (${entries.length} leaves, ${breaks.length} break(s))`, "hash_chain");
-}
-
-// With --entries repo the API's own /log/entries is never read, so one page (the
-// first, immutable and cached) is compared against the shard-derived leaves.
-export async function crossCheckEntriesSource(api, entries, treeSize) {
-  const to = Math.min(ENTRIES_PAGE, treeSize);
-  const served = (await getJson(`${api}/log/entries?from=1&to=${to}`)).entries ?? [];
-  const mine = entries.slice(0, to);
-  const agree = served.length === mine.length && mine.every((e, i) => String(served[i].seq) === String(e.seq) && served[i].leaf_hash === e.leaf_hash);
-  return { agree, servedCount: served.length, expected: mine.length };
-}
-
-export async function checkEntriesSource(api, entriesMode, entries, treeSize) {
-  if (!api || entriesMode !== "repo") {
-    record("entries_source", "skip");
-    return;
-  }
-  try {
-    const x = await crossCheckEntriesSource(api, entries, treeSize);
-    check(x.agree, `/log/entries agrees with the repo shards over the first ${x.expected} leaves (served ${x.servedCount})`, "entries_source");
-  } catch (e) {
-    check(false, `/log/entries cross-check: ${e.message}`, "entries_source");
-  }
 }

@@ -2,8 +2,7 @@
 // The signed tree head: its signature, its age, and its agreement with the anchor
 // published in the log repository.
 
-import { getJson } from "../http.mjs";
-import { check, record, skipCheck } from "../outcomes.mjs";
+import { check, record } from "../outcomes.mjs";
 import { hexToBytes, verifySth } from "../transparency.mjs";
 
 export function checkCheckpointSignature(pubkey, cp) {
@@ -30,23 +29,4 @@ export function checkFreshness(liveCp, maxAgeHours) {
     return;
   }
   check(ageH <= maxAgeHours, `checkpoint is fresh (${ageH.toFixed(1)}h old, threshold ${maxAgeHours}h; a quiet log ages legitimately, tune --max-checkpoint-age-hours)`, "freshness");
-}
-
-// Two independent publications of the same tree head must agree. Offline the
-// anchor is the checkpoint under test, so there is nothing to compare it with.
-export async function checkGithubAnchor(repo, api, liveCp) {
-  if (!repo || !api) {
-    skipCheck(`GitHub anchor cross-check (${repo ? "offline audit: the anchor is the checkpoint under test" : "no --repo"})`, "github_anchor");
-    return;
-  }
-  try {
-    const latest = await getJson(`${repo}/checkpoints/latest.json`);
-    check(
-      latest.root_hash === liveCp.root_hash && String(latest.tree_size) === String(liveCp.tree_size),
-      `GitHub anchor matches signed root (tree_size=${latest.tree_size})`,
-      "github_anchor",
-    );
-  } catch (e) {
-    check(false, `GitHub anchor fetch: ${e.message}`, "github_anchor");
-  }
 }

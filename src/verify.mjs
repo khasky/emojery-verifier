@@ -9,9 +9,10 @@
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { checkConsistencyChain, checkpointForShardCoverage, verifyCheckpointArchive } from "./checks/archive.mjs";
-import { checkCheckpointSignature, checkFreshness, checkGithubAnchor } from "./checks/checkpoint.mjs";
+import { checkCheckpointSignature, checkFreshness } from "./checks/checkpoint.mjs";
 import { checkIdentityTrack } from "./checks/identity-track.mjs";
-import { checkEntriesSource, checkHashChainReplay, checkMerkleRoot, fetchEntries, manifestBase, manifestCoverage, rehashLeaves } from "./checks/leaves.mjs";
+import { checkServedCounts } from "./checks/counters.mjs";
+import { checkHashChainReplay, checkMerkleRoot, fetchEntries, manifestBase, manifestCoverage, rehashLeaves } from "./checks/leaves.mjs";
 import { verifyOts } from "./checks/ots.mjs";
 import { verifyRekor } from "./checks/rekor.mjs";
 import { checkRevocationFeed, checkStructure, checkWipes, reportFold } from "./checks/semantics.mjs";
@@ -38,6 +39,10 @@ const PINNED_AUDIENCES = [
   "vjid5zxm5yuyf5moohb74waeaq2m38",
 ];
 const PINNED_ISSUERS = DEFAULT_ISSUERS;
+
+// The host whose public badges carry the served count. It is the one number a reader
+// is actually shown, so the fold is held against it; --counts-base "" opts out.
+const PINNED_COUNTS_BASE = "https://api.emojery.app";
 
 // keys/enroll-v1.json records the bb the operator proved with; a drift from the
 // version pinned in package.json is reported next to the proof check.
@@ -72,26 +77,26 @@ async function main() {
 
   // A log that has never signed anything answers 404 no_checkpoint: a brand-new or
   // freshly reset deployment, with nothing to replay and nothing to contradict.
-  if (o.api && (await emptyLog(o.api))) {
+  if (await emptyLog(o.repo)) {
     out("the log has published no checkpoint yet (empty log) - nothing to verify");
     if (o.json) process.stdout.write(`${JSON.stringify({ result: "pass", tree_size: 0, ts: Date.now(), checks: { log: "empty" }, duration_sec: 0 })}\n`);
     else out("\nRESULT: PASS (empty log)");
     return;
   }
 
-  const liveCp = o.api ? await getJson(`${o.api}/log/checkpoint`) : await getJson(`${o.repo}/checkpoints/latest.json`);
+  const liveCp = await getJson(`${o.repo}/checkpoints/latest.json`);
   let cp = liveCp;
   let treeSize = Number(cp.tree_size);
-  out(`checkpoint: tree_size=${cp.tree_size} ts=${cp.ts}${o.api ? "" : " (from repo latest.json - offline audit)"}`);
+  out(`checkpoint: tree_size=${cp.tree_size} ts=${cp.ts}`);
 
-  // Offline, how far the shards reach decides which checkpoint this run can audit:
-  // the newest published one they fully cover. With --api the missing tail is
-  // fetched instead and the tip stays under test.
+  // How far the published chunks reach decides which checkpoint this run can audit:
+  // the newest one they fully cover. A publish lands a tick behind the checkpoint it
+  // covers, so the tip is routinely one chunk ahead of the bodies.
   const leafless = o.entriesMode === "none";
   let entries = null;
   let uncovered = false;
-  if (!o.api && !leafless) {
-    entries = await fetchEntries(o.api, o.repo, treeSize, { mode: o.entriesMode, base: o.entriesBase });
+  if (!leafless) {
+    entries = await fetchEntries(o.repo, treeSize, o.entriesBase);
     const covered = entries.length ? Number(entries[entries.length - 1].seq) : 0;
     if (covered < treeSize) {
       const stepped = await checkpointForShardCoverage(o.repo, covered);
@@ -99,10 +104,10 @@ async function main() {
         cp = stepped;
         treeSize = Number(stepped.tree_size);
         entries = entries.filter((e) => Number(e.seq) <= treeSize);
-        detail(`auditing published checkpoint tree_size=${treeSize} instead - the newest the shards fully cover (live tip ${liveCp.tree_size})`);
+        detail(`auditing published checkpoint tree_size=${treeSize} instead - the newest the published chunks fully cover (tip ${liveCp.tree_size})`);
       } else {
         uncovered = true;
-        detail(`no published checkpoint at or below ${covered} leaves - nothing in the shards can be replayed against a signed root`);
+        detail(`no published checkpoint at or below ${covered} leaves - nothing published can be replayed against a signed root`);
       }
     }
   }
@@ -110,7 +115,6 @@ async function main() {
   section("Checkpoint");
   await checkCheckpointSignature(pubkey, cp);
   checkFreshness(liveCp, o.maxAgeHours);
-  await checkGithubAnchor(o.repo, o.api, liveCp);
 
   // --entries none checks the signed checkpoints and the consistency proofs beside
   // them without downloading a leaf, which is seconds on a log of any size. The root
@@ -121,9 +125,8 @@ async function main() {
   if (leafless) {
     skipCheck("leaf hashes, Merkle root and hash chain (--entries none)", "merkle_root");
   } else {
-    entries ??= await fetchEntries(o.api, o.repo, treeSize, { mode: o.entriesMode, base: o.entriesBase });
     leaves = await rehashLeaves(entries);
-    await checkMerkleRoot(leaves, cp, treeSize, o.entriesMode, uncovered);
+    await checkMerkleRoot(leaves, cp, treeSize, uncovered);
     await checkHashChainReplay(entries, leaves);
   }
 
@@ -134,20 +137,17 @@ async function main() {
   section("Independent witness");
   const rekorEntryId = await verifyRekor(o.repo, pubkey, liveCp, archiveBySize, o.rekorDisabled);
 
-  section("Entries cross-check");
   if (leafless) {
-    skipCheck("the entries cross-check, the counter fold, the revocation feed and invariants A-J (--entries none)", "leafless");
+    section("Leafless run");
+    skipCheck("the counter fold, the tombstone file, the served counts and invariants A-J (--entries none)", "leafless");
     detail("no leaf was read: the checkpoints and their consistency proofs are checked, the contents of the log are not");
   } else {
-    await checkEntriesSource(o.api, o.entriesMode, entries, treeSize);
-  }
-
-  if (!leafless) {
     section("Log semantics");
     reportFold(entries);
-    await checkRevocationFeed(o.api, entries, treeSize);
+    await checkRevocationFeed(o.repo, entries, treeSize);
     checkStructure(entries);
     checkWipes(entries, cp, o.wipeGraceHours);
+    await checkServedCounts(entries, { base: o.countsBase ?? PINNED_COUNTS_BASE, sample: o.countsSample });
 
     section("Identity");
     await checkIdentityTrack(entries, {
@@ -156,7 +156,7 @@ async function main() {
       proofsBase: await proofsBaseFor(o),
       // How far those bodies reach: an ENROLL past it is inside the publisher's
       // batching window, not a leaf whose proof has gone missing.
-      mirroredThrough: await manifestCoverage(o.repo, treeSize),
+      mirroredThrough: await manifestCoverage(o.repo),
       keysPerAccount: o.keysPerAccount,
       allowUnsignedVotes: o.allowUnsignedVotes,
       blindPubkey,
@@ -182,12 +182,8 @@ async function main() {
       treeSize: cp.tree_size,
       rootHash: `${cp.root_hash.slice(0, 10)}...${cp.root_hash.slice(-6)}`,
       keyLabel: `${pubkey.slice(0, 10)}... ${pubkey === PINNED_PUBKEY_B64 ? "(pinned in verify.mjs)" : "(--pubkey)"}`,
-      witnesses: [checks.github_anchor === "pass" ? "GitHub anchor" : null, rekorEntryId ? `Rekor ${rekorEntryId.slice(0, 12)}...` : null, btcBlockHeight ? `Bitcoin block ${btcBlockHeight}` : null],
-      sources: [
-        o.api ? new URL(o.api).host : "offline (API not contacted)",
-        slug ? `${slug.owner}/${slug.repo}@${slug.ref}` : o.repo ? new URL(o.repo).host : null,
-        { repo: "entry shards", manifest: "manifest + shard bodies", none: "no leaves read", api: "API pages" }[o.entriesMode],
-      ],
+      witnesses: [rekorEntryId ? `Rekor ${rekorEntryId.slice(0, 12)}...` : null, btcBlockHeight ? `Bitcoin block ${btcBlockHeight}` : null],
+      sources: [slug ? `${slug.owner}/${slug.repo}@${slug.ref}` : new URL(o.repo).host, { manifest: "manifest + chunk bodies", none: "no leaves read" }[o.entriesMode]],
       elapsedSec: ((Date.now() - startedAt) / 1000).toFixed(1),
       reproduce: `node src/verify.mjs ${process.argv.slice(2).join(" ")}`,
     });

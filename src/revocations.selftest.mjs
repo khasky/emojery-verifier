@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Self-test for the verifier's HTTP layer: revocation paging, the entries-source
-// cross-check, and the transient-failure retry.
+// Self-test for the verifier's HTTP layer: the published tombstone file, the chunk
+// reader and its manifest chain, the served-count comparison, and the retry.
 //   node src/revocations.selftest.mjs
 //
 // These are the only parts of the verifier that cross a page boundary or depend on
@@ -8,10 +8,12 @@
 // fetch is stubbed here and every request the code makes is recorded and asserted.
 // Real network is never touched.
 
-import { crossCheckEntriesSource, fetchEntries } from "./checks/leaves.mjs";
-import { fetchRevocations } from "./checks/semantics.mjs";
+import { fetchEntries } from "./checks/leaves.mjs";
+import { checkServedCounts, foldedTargets } from "./checks/counters.mjs";
+import { compareRevocations } from "./checks/semantics.mjs";
 import { createHash } from "node:crypto";
 import { emptyLog, getJson, listRepoDir, RETRY_MAX } from "./http.mjs";
+import { checks } from "./outcomes.mjs";
 
 let failed = false;
 function check(ok, msg) {
@@ -43,66 +45,24 @@ function stubFetch(handler) {
 
 const revoke = (seq) => ({ seq: String(seq), ts: 1, revoke_seq: "1", reason_code: "erasure_self", evidence_hash: null, target: { site: "github", target_id: "gh:o/r" } });
 
-// --- 1. bare feed that does not truncate IS the whole set --------------------
-// The point of the shortcut: a million-leaf log must not cost a thousand requests
-// to list a handful of tombstones.
+// --- 1. the published tombstone file against the leaves ----------------------
 {
-  const calls = stubFetch((u) => {
-    if (u.pathname === "/log/revocations" && u.search === "") {
-      return { body: { tree_size: "1000000", revocations: [revoke(5), revoke(9)], has_more: false, next_from: null } };
-    }
-    return { status: 500 };
-  });
-  const revs = await fetchRevocations(API, 1_000_000);
-  check(calls.length === 1, `complete bare feed costs ONE request over a 1M-leaf log (made ${calls.length})`);
-  check(revs.map((r) => r.seq).join(",") === "5,9", `bare feed returns every tombstone (got ${revs.map((r) => r.seq).join(",")})`);
+  const op4 = ["5", "9"];
+  const file = { tree_size: "1000000", revocations: [revoke(5), revoke(9)] };
+  check(compareRevocations(op4, file, 1_000_000).agree, "a file that lists exactly the op=4 leaves agrees");
+  check(!compareRevocations(["5"], file, 1_000_000).agree, "a file listing a tombstone the log does not carry disagrees");
+  check(!compareRevocations(op4, { revocations: [revoke(5)] }, 1_000_000).agree, "a file hiding a tombstone the log carries disagrees");
 }
 
-// --- 2. the bare feed is clamped to the audited checkpoint -------------------
-// It reads the live log, so a revocation appended mid-run would otherwise read as
-// a set mismatch against leaves the checkpoint covers — a FAIL on an honest log.
+// --- 2. the file is clamped to the audited checkpoint ------------------------
+// It is written over the live log, so a revocation appended mid-run would otherwise
+// read as a set mismatch against leaves the checkpoint covers - a FAIL on an honest
+// log.
 {
-  stubFetch(() => ({ body: { tree_size: "12", revocations: [revoke(5), revoke(11)], has_more: false, next_from: null } }));
-  const revs = await fetchRevocations(API, 9);
-  check(revs.map((r) => r.seq).join(",") === "5", `a tombstone past the audited tree_size is dropped (kept ${revs.map((r) => r.seq).join(",")})`);
-}
-
-// --- 3. a truncated bare feed falls back to the full range walk --------------
-{
-  // Routed on the PATH, not just on the query: the bare feed and the range walk are
-  // two endpoints, and a walk that asked the wrong one would otherwise still pass
-  // here while 404ing against a real deployment.
-  const calls = stubFetch((u) => {
-    if (u.pathname === "/log/revocations") return { body: { tree_size: "2500", revocations: [revoke(2400)], has_more: true, next_from: null } };
-    if (u.pathname !== "/log/revocations/range") return { status: 404, body: { error: "not found" } };
-    const from = Number(u.searchParams.get("from"));
-    return { body: { tree_size: "2500", revocations: [revoke(from)], has_more: false, next_from: null } };
-  });
-  const revs = await fetchRevocations(API, 2500);
-  const ranges = calls.filter((c) => c.includes("from="));
-  check(
-    ranges.every((c) => c.startsWith("/log/revocations/range?")),
-    `the range walk asks /log/revocations/range (${[...new Set(ranges.map((c) => c.split("?")[0]))].join(", ")})`,
-  );
-  check(ranges.length === 3, `has_more walks the whole range: ceil(2500/1000) = 3 pages (made ${ranges.length})`);
-  check(ranges[0].endsWith("from=1&to=1000") && ranges[2].endsWith("from=2001&to=2500"), `range pages are 1000 wide and clamped to tree_size (${ranges.join(" ")})`);
-  check(revs.map((r) => r.seq).join(",") === "1,1001,2001", `the walk keeps every page's rows (got ${revs.map((r) => r.seq).join(",")})`);
-}
-
-// --- 4. entries-source cross-check ------------------------------------------
-{
-  const mine = [
-    { seq: "1", leaf_hash: "aa" },
-    { seq: "2", leaf_hash: "bb" },
-  ];
-  stubFetch(() => ({ body: { entries: [{ seq: "1", leaf_hash: "aa" }, { seq: "2", leaf_hash: "bb" }] } }));
-  check((await crossCheckEntriesSource(API, mine, 2)).agree === true, "cross-check agrees when the API page matches the shards");
-
-  stubFetch(() => ({ body: { entries: [{ seq: "1", leaf_hash: "aa" }, { seq: "2", leaf_hash: "ff" }] } }));
-  check((await crossCheckEntriesSource(API, mine, 2)).agree === false, "cross-check catches a leaf_hash the API serves differently");
-
-  stubFetch(() => ({ body: { entries: [{ seq: "1", leaf_hash: "aa" }] } }));
-  check((await crossCheckEntriesSource(API, mine, 2)).agree === false, "cross-check catches a short API page");
+  const file = { tree_size: "12", revocations: [revoke(5), revoke(11)] };
+  const { listed, agree } = compareRevocations(["5"], file, 9);
+  check(listed.join(",") === "5", `a tombstone past the audited tree_size is dropped (kept ${listed.join(",")})`);
+  check(agree, "and what is left still has to match the leaves");
 }
 
 // --- 5. retry ----------------------------------------------------------------
@@ -138,143 +98,85 @@ const revoke = (seq) => ({ seq: String(seq), ts: 1, revoke_seq: "1", reason_code
   check(threw && calls.length === 1, `a 4xx that is not 429 fails immediately (${calls.length} call)`);
 }
 
-// --- 6. shard-sourced leaves, tail filled from the API ----------------------
-// The public shards can trail the live checkpoint by a batch of leaves.
-// Without the fill, --entries repo cannot reproduce the
-// checkpoint root at all and every scheduled run in that mode reads as tampering.
-{
-  const shard = (n) => Array.from({ length: n }, (_, i) => JSON.stringify({ seq: String(i + 1), leaf_hash: "aa" })).join("\n");
-  const handler = (u) => {
-    if (u.pathname.includes("/entries/")) return { text: shard(1330) };
-    const from = Number(u.searchParams.get("from"));
-    const to = Number(u.searchParams.get("to"));
-    return { body: { entries: Array.from({ length: to - from + 1 }, (_, i) => ({ seq: String(from + i), leaf_hash: "bb" })) } };
-  };
-
-  const calls = stubFetch(handler);
-  const entries = await fetchEntries(API, REPO, 1340, { mode: "repo" });
-  const pages = calls.filter((c) => c.includes("from="));
-  check(entries.length === 1340, `shard tail is filled up to the checkpoint (got ${entries.length} of 1340)`);
-  check(entries[entries.length - 1].seq === "1340", `the filled tail ends at the checkpoint's last leaf (${entries[entries.length - 1].seq})`);
-  check(pages.length === 1 && pages[0].endsWith("from=1331&to=1340"), `only the missing tail is refetched (${pages.join(" ") || "none"})`);
-
-  const offline = stubFetch(handler);
-  const shardsOnly = await fetchEntries(undefined, REPO, 1340, { mode: "repo" });
-  check(shardsOnly.length === 1330 && !offline.some((c) => c.includes("from=")), "a fully offline audit stays on the shards and contacts no API");
-
-  // No shard at all: the publisher batches appends, so a young log - a freshly
-  // reset staging one especially - carries a signed checkpoint and an empty
-  // entries/ directory. A 404 there must read as "not mirrored yet" and fall
-  // through to the same tail fill, not as a broken mirror.
-  stubFetch((u) => (u.pathname.includes("/entries/") ? { status: 404 } : handler(u)));
-  const unmirrored = await fetchEntries(API, REPO, 482, { mode: "repo" });
-  check(unmirrored.length === 482, `an unpublished shard falls back to the API for every leaf (got ${unmirrored.length} of 482)`);
-
-  // Any other transport failure still fails the run: a 500 is the mirror being
-  // broken, and swallowing it would audit a log nobody can independently read.
-  stubFetch((u) => (u.pathname.includes("/entries/") ? { status: 500 } : handler(u)));
-  let shardThrew = false;
-  try {
-    await fetchEntries(API, REPO, 482, { mode: "repo" });
-  } catch {
-    shardThrew = true;
-  }
-  check(shardThrew, "an unreadable shard (500) still fails the run");
-}
-
-// --- 6b. manifest mode: the digest is what makes the body's host irrelevant ---
-// A shard fetched from anywhere is admitted only if its bytes hash to what the
+// --- 6. chunk-sourced leaves: the digest is what makes the body's host irrelevant ---
+// A chunk fetched from anywhere is admitted only if its bytes hash to what the
 // manifest committed to in the repository. That is the whole trust argument for
 // serving the bodies off object storage, so it gets a test on both sides.
 {
-  // listRepoDir goes through the GitHub contents API, so the manifest needs a
-  // raw.githubusercontent.com base rather than the generic REPO used above.
   const GH_REPO = "https://raw.githubusercontent.com/khasky/log/main";
   const bodyText = [1, 2, 3].map((n) => JSON.stringify({ seq: String(n), leaf_hash: "aa" })).join("\n");
   const digest = createHash("sha256").update(bodyText, "utf8").digest("hex");
   const manifest = (sha) => JSON.stringify({ from: 1, to: 3, count: 3, bytes: bodyText.length, sha256: sha });
   const serve = (sha, base) => (u) => {
-    if (u.host === "api.github.com") return { body: [{ name: "000000000001-000000010000.ndjson" }] };
     if (u.pathname.endsWith("/entries/mirrors.json")) return { body: { base } };
-    if (u.pathname.includes("/entries/manifest/")) return { text: manifest(sha) };
-    // Only under the shard's own range name: the manifest line covers seqs 1-3, the
-    // shard that holds them is still named for the 10,000 it will grow to.
-    if (u.pathname.endsWith("/entries/000000000001-000000010000.ndjson")) return { text: bodyText };
+    if (u.pathname.endsWith("/entries/manifest/000000000001.ndjson")) return { text: manifest(sha) };
+    if (u.pathname.endsWith("/entries/000000000001-000000000003.ndjson")) return { text: bodyText };
     return { status: 404 };
   };
 
   stubFetch(serve(digest, "https://log.example/"));
-  const rows = await fetchEntries(undefined, GH_REPO, 3, { mode: "manifest" });
-  check(rows.length === 3 && rows[2].seq === "3", `manifest mode reads the shard the manifest names (got ${rows.length} of 3)`);
+  const rows = await fetchEntries(GH_REPO, 3);
+  check(rows.length === 3 && rows[2].seq === "3", `the chunk the manifest names is read (got ${rows.length} of 3)`);
 
   const hosts = stubFetch(serve(digest, "https://log.example/"));
-  await fetchEntries(undefined, GH_REPO, 3, { mode: "manifest" });
+  await fetchEntries(GH_REPO, 3);
   check(
     hosts.some((c) => c.startsWith("https://log.example/entries/")),
     `the body comes from the host mirrors.json names (${hosts.filter((c) => c.includes("/entries/")).join(" ")})`,
   );
 
   const overridden = stubFetch(serve(digest, "https://log.example/"));
-  await fetchEntries(undefined, GH_REPO, 3, { mode: "manifest", base: "https://mirror.example" });
+  await fetchEntries(GH_REPO, 3, "https://mirror.example");
   check(
     overridden.some((c) => c.startsWith("https://mirror.example/entries/")),
     "--entries-base overrides the host mirrors.json names",
   );
 
-  // The manifest is read by derived path, so a GitHub API that refuses - the 60-an-hour
-  // unauthenticated limit a shared CI address reaches routinely - takes nothing with it.
-  // Listing it used to throw, which read as "this log publishes no entries at all" and
-  // turned every unmirrored proof into one that failed to verify.
-  const apiCalls = stubFetch((u) => {
-    if (u.host === "api.github.com") return { status: 403 };
-    if (u.pathname.endsWith("/entries/mirrors.json")) return { body: { base: "https://log.example/" } };
-    if (u.pathname.includes("/entries/manifest/")) return { text: manifest(digest) };
-    if (u.pathname.endsWith("/entries/000000000001-000000010000.ndjson")) return { text: bodyText };
-    return { status: 404 };
-  });
-  const offline = await fetchEntries(undefined, GH_REPO, 3, { mode: "manifest" });
-  check(offline.length === 3, `manifest mode survives a GitHub API that refuses (got ${offline.length} of 3)`);
-  check(!apiCalls.some((c) => c.includes("api.github.com")), `manifest mode asks api.github.com for nothing (${apiCalls.filter((c) => c.includes("api.github.com")).join(" ") || "none"})`);
-
-  // --entries repo against a log that publishes a manifest: git holds digests, not
-  // shards, so the mode reads nothing. Passing with every leaf check skipped would
-  // tell a fork its audit succeeded; the website taught exactly this flag.
-  stubFetch((u) => {
-    if (u.pathname.endsWith("/entries/mirrors.json")) return { body: { base: "https://log.example/" } };
-    if (u.pathname.includes("/entries/manifest/")) return { text: manifest(digest) };
-    return { status: 404 };
-  });
-  let repoOnManifest = "";
-  try {
-    await fetchEntries(undefined, GH_REPO, 3, { mode: "repo" });
-  } catch (e) {
-    repoOnManifest = e.message;
-  }
-  check(repoOnManifest.includes("--entries manifest"), `--entries repo on a manifest-published log names the mode that reads it (${repoOnManifest.slice(0, 60) || "no error"})`);
+  // The manifest is read by derived path and chained by its own last line, so nothing
+  // here asks the GitHub contents API - whose 60-an-hour unauthenticated limit a
+  // shared CI address reaches routinely.
+  const apiCalls = stubFetch(serve(digest, "https://log.example/"));
+  await fetchEntries(GH_REPO, 3);
+  check(!apiCalls.some((c) => c.includes("api.github.com")), `reading the leaves asks api.github.com for nothing (${apiCalls.filter((c) => c.includes("api.github.com")).join(" ") || "none"})`);
 
   stubFetch(serve("0".repeat(64), "https://log.example/"));
   let digestThrew = "";
   try {
-    await fetchEntries(undefined, GH_REPO, 3, { mode: "manifest" });
+    await fetchEntries(GH_REPO, 3);
   } catch (e) {
     digestThrew = e.message;
   }
-  check(digestThrew.includes("sha256") && digestThrew.includes("000000000001-000000010000"), `a body that does not match its manifest digest is refused (${digestThrew.slice(0, 60)})`);
+  check(digestThrew.includes("sha256") && digestThrew.includes("000000000001-000000000003"), `a body that does not match its manifest digest is refused (${digestThrew.slice(0, 60)})`);
+
+  // The chain walks file to file by the `to` of the last line. A file that does not
+  // advance it would otherwise loop forever.
+  stubFetch((u) => {
+    if (u.pathname.endsWith("/entries/mirrors.json")) return { body: { base: "https://log.example/" } };
+    if (u.pathname.includes("/entries/manifest/")) return { text: JSON.stringify({ from: 1, to: 0, count: 0, bytes: 0, sha256: digest }) };
+    return { status: 404 };
+  });
+  let chainThrew = "";
+  try {
+    await fetchEntries(GH_REPO, 3);
+  } catch (e) {
+    chainThrew = e.message;
+  }
+  check(chainThrew.includes("does not advance"), `a manifest file that does not advance the chain is refused (${chainThrew.slice(0, 60) || "no error"})`);
 }
 
 // --- 7. an empty log is a state, not a failure ------------------------------
-// A never-signed log answers 404 no_checkpoint. Reading that as a crash published
-// "Independent verification: FAIL" for an environment that had simply not started
-// yet - but the check has to stay narrow, or a dropped route reads as "empty".
+// A never-signed log publishes no checkpoints/latest.json. Reading that as a crash
+// published "Independent verification: FAIL" for an environment that had simply not
+// started yet.
 {
-  stubFetch(() => ({ status: 404, body: { error: "no_checkpoint" } }));
-  check(await emptyLog(API), "404 no_checkpoint reads as an empty log");
-
   stubFetch(() => ({ status: 404, body: { error: "not found" } }));
-  check(!(await emptyLog(API)), "a plain 404 is NOT an empty log");
+  check(await emptyLog(REPO), "a missing checkpoints/latest.json reads as an empty log");
 
   stubFetch(() => ({ body: { tree_size: 5, root_hash: "aa", ts: 1, signature: "bb" } }));
-  check(!(await emptyLog(API)), "a signing log is not empty");
+  check(!(await emptyLog(REPO)), "a signing log is not empty");
+
+  stubFetch(() => ({ status: 500, body: {} }));
+  check(!(await emptyLog(REPO)), "a transport failure is not an empty log either");
 }
 
 // --- 6. a directory past the Contents API's 1000-file cap falls back to Git Trees ---
@@ -296,5 +198,47 @@ const revoke = (seq) => ({ seq: String(seq), ts: 1, revoke_seq: "1", reason_code
 }
 
 globalThis.fetch = realFetch;
+// --- 8. the fold against the served count ------------------------------------
+// Everything else in this tool re-derives the counters and stops; this is the one
+// check that holds the log against the number a reader is shown.
+{
+  const vote = (seq, target, reaction) => ({ seq: String(seq), op: 1, site: "github", target_id: target, reaction });
+  const entries = [vote(1, "o/big", "🔥"), vote(2, "o/big", "🔥"), vote(3, "o/big", "❤️"), vote(4, "o/small", "🔥")];
+  const ranked = foldedTargets(entries);
+  check(ranked[0].targetId === "o/big" && ranked[0].total === 3, `the fold totals a target across its reactions, largest first (${ranked.map((t) => `${t.targetId}=${t.total}`).join(" ")})`);
+
+  // A fail is sticky by design (outcomes.mjs), so each case starts from no outcome.
+  const fresh = () => {
+    delete checks.served_counts;
+  };
+  const serve = (total) => stubFetch((u) => ({ body: { schemaVersion: 1, label: "reactions", message: "🔥 3", color: "x", cacheSeconds: 1, total: u.pathname.includes("big") ? total : 1 } }));
+
+  fresh();
+  const urls = serve(3);
+  await checkServedCounts(entries, { base: "https://api.example.test", sample: 2 });
+  check(checks.served_counts === "pass", `an honest badge agrees with the fold (${checks.served_counts})`);
+  check(
+    urls.some((c) => c.includes("/badge/github/o/big.json")),
+    `the served count is read off the public badge (${urls.join(" ")})`,
+  );
+
+  // The point of the whole check: a count the log cannot account for.
+  fresh();
+  serve(99);
+  await checkServedCounts(entries, { base: "https://api.example.test", sample: 2 });
+  check(checks.served_counts === "fail", `a badge serving more than the log folds to fails (${checks.served_counts})`);
+
+  // And a build that publishes no exact total is not silently a match.
+  fresh();
+  stubFetch(() => ({ body: { schemaVersion: 1, label: "reactions", message: "🔥 3", color: "x", cacheSeconds: 1 } }));
+  await checkServedCounts(entries, { base: "https://api.example.test", sample: 1 });
+  check(checks.served_counts === "fail", `a badge with no exact total is not a match (${checks.served_counts})`);
+
+  fresh();
+  await checkServedCounts(entries, { base: "", sample: 2 });
+  check(checks.served_counts === "skip", `no counts base turns the check into a skip (${checks.served_counts})`);
+}
+
+
 console.log(failed ? "\nRESULT: FAIL" : "\nRESULT: PASS");
 process.exitCode = failed ? 1 : 0;
