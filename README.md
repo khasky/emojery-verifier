@@ -97,7 +97,7 @@ The same tool verifies a staging deployment or a fork; the flags below replace t
 | Flag | Meaning |
 | --- | --- |
 | `--pubkey <base64>` | the deployment's log signing key (raw Ed25519) |
-| `--entries <source>` | where the leaves come from (default `api`): `repo` reads the log repository's `entries/` shards; `manifest` reads the repository's `entries/manifest` and fetches each shard body from the host it names, checking it against its `sha256`; `none` reads no leaves at all (below). With no `--api`, all three audit a mirror offline |
+| `--entries <source>` | where the leaves come from (default `api`): `repo` reads the log repository's `entries/` shards, and refuses when the repository publishes a manifest instead of shards; `manifest` reads the repository's `entries/manifest` and fetches each shard body from the host it names, checking it against its `sha256`; `none` reads no leaves at all (below). With no `--api`, all three audit a mirror offline |
 | `--entries-base <url>` | where the shard bodies and the ENROLL proof bodies are fetched from, instead of the host `entries/mirrors.json` names. Any copy will do: the published digest is what decides |
 | `--no-proofs` | skip the ENROLL proof check, the one that loads `@aztec/bb.js` |
 | `--no-rekor` | skip the Rekor witness check |
@@ -108,7 +108,7 @@ The same tool verifies a staging deployment or a fork; the flags below replace t
 | `--blind-pubkey <spki b64>` | the deployment's blind-signing RSA public key |
 | `--enroll-vk-hash <hex>` | SHA-256 of the deployment's `keys/enroll-v1.vk` |
 | `--salt-commitment <hex>` | SHA-256 of the deployment's nullifier salt |
-| `--issuers <provider=iss,...>` | the admitted OpenID issuers; an `iss` starting with `^` is a regular expression |
+| `--issuers <provider=iss,...>` | the admitted OpenID issuers, **replacing** `PINNED_ISSUERS` rather than adding to it; an `iss` starting with `^` is a regular expression. A deployment that runs its own test issuer lists the real providers alongside it, or their ENROLL proofs are rejected as un-admitted |
 | `--audiences <id,...>` | the deployment's OAuth client ids |
 | `--keys-per-account <n>` | epoch keys one account may hold per epoch (default 10; 0 lifts the bound) |
 

@@ -73,7 +73,10 @@ advanced (another deployment, a policy window, a lighter run):
   --blind-pubkey <spki b64> the deployment's blind-signing RSA public key
   --enroll-vk-hash <hex>    SHA-256 of the deployment's keys/enroll-v1.vk
   --salt-commitment <hex>   SHA-256 of the deployment's nullifier salt
-  --issuers <p=iss,...>     admitted OpenID issuers (an iss starting with ^ is a regex)
+  --issuers <p=iss,...>     admitted OpenID issuers, REPLACING the built-in list (an
+                            iss starting with ^ is a regex); a deployment with a test
+                            issuer names the real providers here too, or their ENROLL
+                            proofs fail as un-admitted
   --audiences <id,...>      the deployment's OAuth client ids
   --keys-per-account <n>    epoch keys one account may hold per epoch (default ${EPOCH_KEYS_PER_ACCOUNT},
                             0 lifts the bound)
