@@ -2,7 +2,7 @@
 // The raw leaves: fetched from the API pages or the log repository's shards, rehashed,
 // folded into the Merkle root and replayed along the published hash chain.
 
-import { getBytes, getJson, getText, listRepoDir } from "../http.mjs";
+import { getBytes, getJson, getText } from "../http.mjs";
 import { check, record, skipCheck } from "../outcomes.mjs";
 import { detail, details, phase } from "../report.mjs";
 import { bytesToHex, checkHashChain, leafHashFromEntry, merkleRootFromLeaves, sha256 } from "../transparency.mjs";
@@ -31,18 +31,35 @@ export async function manifestBase(repo, override) {
   return base.endsWith("/") ? base : `${base}/`;
 }
 
+// One manifest file per this many leaves, matching what the publisher writes. Both
+// halves derive the name from the range rather than recording it, so neither side
+// has to enumerate anything.
+const MANIFEST_SPAN = SHARD_SIZE * 1_000;
+
+function manifestPath(start) {
+  return `entries/manifest/${padSeq(start)}-${padSeq(start + MANIFEST_SPAN - 1)}.ndjson`;
+}
+
 // The manifest: one line per shard, {from, to, count, bytes, sha256}, in files of
 // entries/manifest/ named by the leaf range they cover. The shard's own name derives
 // from its range, so no line carries a URL and a mirror needs no manifest of its own.
-async function readManifest(repo) {
-  const listed = await listRepoDir(repo, "entries/manifest");
-  if (listed === null) throw new Error("--entries manifest needs a raw.githubusercontent.com --repo base (the manifest is listed through the GitHub API)");
-  if (listed.rateLimited) throw new Error("GitHub rate-limited the manifest listing; set GITHUB_TOKEN to lift the quota");
-  if (listed.missing) throw new Error("this log publishes no entries/manifest - audit it with --entries repo, or --entries none for the history alone");
-  const files = (listed.names ?? []).filter((n) => n.endsWith(".ndjson")).sort();
+//
+// Read by DERIVED path, never by listing the directory: a listing means the GitHub
+// contents API, rate-limited to 60 an hour per IP unauthenticated - which a shared CI
+// address reaches routinely. A mode whose whole point is auditing from a mirror
+// cannot depend on api.github.com answering, and a listing that fails used to read as
+// "this log publishes nothing", which is a far worse answer than a 404 per file.
+async function readManifest(repo, treeSize) {
   const shards = [];
-  for (const name of files) {
-    const text = await getText(`${repo}/entries/manifest/${name}`);
+  for (let start = 1; start <= treeSize; start += MANIFEST_SPAN) {
+    let text;
+    try {
+      text = await getText(`${repo}/${manifestPath(start)}`);
+    } catch (e) {
+      // A span with nothing published yet is the publisher's batching window, not a hole.
+      if (e.status === 404) continue;
+      throw new Error(`${manifestPath(start)} could not be read (${e.message})`);
+    }
     for (const line of text.split("\n")) {
       const t = line.trim();
       if (!t) continue;
@@ -56,10 +73,10 @@ async function readManifest(repo) {
 // The highest seq the published shards reach. Bodies are batched, so the mirror
 // routinely stops short of the signed tip, and a leaf past this is not missing -
 // it is not published yet. Null when this log publishes no manifest at all.
-export async function manifestCoverage(repo) {
+export async function manifestCoverage(repo, treeSize) {
   if (!repo) return null;
   try {
-    const shards = await readManifest(repo);
+    const shards = await readManifest(repo, treeSize);
     return shards.reduce((high, s) => Math.max(high, Number(s.to)), 0);
   } catch {
     return null;
@@ -98,7 +115,7 @@ export async function fetchEntries(api, repo, treeSize, { mode, base } = {}) {
   const rows = [];
   const fetching = phase(entriesMode === "api" ? "fetching leaves" : "reading entries shards");
   if (entriesMode === "manifest") {
-    const shards = await readManifest(repo);
+    const shards = await readManifest(repo, treeSize);
     const from = await manifestBase(repo, base);
     for (const shard of shards) {
       if (Number(shard.from) > treeSize) break;
@@ -141,6 +158,12 @@ export async function fetchEntries(api, repo, treeSize, { mode, base } = {}) {
         if (Number(e.seq) <= treeSize) rows.push(e);
       }
       fetching.tick(rows.length, treeSize);
+    }
+    // A log that publishes a manifest keeps no shard in git at all, so this mode
+    // reads nothing and every leaf-derived check reports a skip - a PASS that
+    // audited none of the contents. Name the mode that does read them instead.
+    if (rows.length === 0 && (await manifestCoverage(repo, treeSize)) > 0) {
+      throw new Error("entries/ holds no shard while entries/manifest/ does: this log commits to shard digests and serves the bodies from the mirror - read it with --entries manifest");
     }
     return fillTail(rows, api, treeSize, fetching, "entries/ shards");
   }

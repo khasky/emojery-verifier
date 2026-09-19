@@ -221,6 +221,37 @@ const revoke = (seq) => ({ seq: String(seq), ts: 1, revoke_seq: "1", reason_code
     "--entries-base overrides the host mirrors.json names",
   );
 
+  // The manifest is read by derived path, so a GitHub API that refuses - the 60-an-hour
+  // unauthenticated limit a shared CI address reaches routinely - takes nothing with it.
+  // Listing it used to throw, which read as "this log publishes no entries at all" and
+  // turned every unmirrored proof into one that failed to verify.
+  const apiCalls = stubFetch((u) => {
+    if (u.host === "api.github.com") return { status: 403 };
+    if (u.pathname.endsWith("/entries/mirrors.json")) return { body: { base: "https://log.example/" } };
+    if (u.pathname.includes("/entries/manifest/")) return { text: manifest(digest) };
+    if (u.pathname.endsWith("/entries/000000000001-000000010000.ndjson")) return { text: bodyText };
+    return { status: 404 };
+  });
+  const offline = await fetchEntries(undefined, GH_REPO, 3, { mode: "manifest" });
+  check(offline.length === 3, `manifest mode survives a GitHub API that refuses (got ${offline.length} of 3)`);
+  check(!apiCalls.some((c) => c.includes("api.github.com")), `manifest mode asks api.github.com for nothing (${apiCalls.filter((c) => c.includes("api.github.com")).join(" ") || "none"})`);
+
+  // --entries repo against a log that publishes a manifest: git holds digests, not
+  // shards, so the mode reads nothing. Passing with every leaf check skipped would
+  // tell a fork its audit succeeded; the website taught exactly this flag.
+  stubFetch((u) => {
+    if (u.pathname.endsWith("/entries/mirrors.json")) return { body: { base: "https://log.example/" } };
+    if (u.pathname.includes("/entries/manifest/")) return { text: manifest(digest) };
+    return { status: 404 };
+  });
+  let repoOnManifest = "";
+  try {
+    await fetchEntries(undefined, GH_REPO, 3, { mode: "repo" });
+  } catch (e) {
+    repoOnManifest = e.message;
+  }
+  check(repoOnManifest.includes("--entries manifest"), `--entries repo on a manifest-published log names the mode that reads it (${repoOnManifest.slice(0, 60) || "no error"})`);
+
   stubFetch(serve("0".repeat(64), "https://log.example/"));
   let digestThrew = "";
   try {

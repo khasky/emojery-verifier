@@ -156,7 +156,7 @@ async function main() {
       proofsBase: await proofsBaseFor(o),
       // How far those bodies reach: an ENROLL past it is inside the publisher's
       // batching window, not a leaf whose proof has gone missing.
-      mirroredThrough: await manifestCoverage(o.repo),
+      mirroredThrough: await manifestCoverage(o.repo, treeSize),
       keysPerAccount: o.keysPerAccount,
       allowUnsignedVotes: o.allowUnsignedVotes,
       blindPubkey,
