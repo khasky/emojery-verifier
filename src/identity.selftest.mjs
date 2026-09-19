@@ -321,5 +321,30 @@ const liveMismatch = await verifyEnrollProofs([rowEnroll], {
 check(liveMismatch.status === "fail" && liveMismatch.notes.some((n) => n.includes("differs from the provider's live JWKS")), "J: an archived provider key that disagrees with the live JWKS fails");
 check(jwkFetches.some((u) => u === `${REPO}/jwks/google/kid-1.json`) && jwkFetches.some((u) => u === `${ISS}/.well-known/openid-configuration`), "J: reads jwks/<provider>/<kid>.json from the repo and discovers the live JWKS from iss");
 
+// Proof bodies are published in the same batches as the shard bodies, so the leaves
+// newest at run time routinely have none yet. Failing those would turn the ordinary
+// state of a live log into a red run; a hole INSIDE what the manifest says is
+// mirrored is still a fail, and so is a 404 on a log that publishes no manifest.
+const mirrored = { keys: { kty: "RSA", kid: "kid-1", n: nB64, e: "AQAB" } };
+const proofMissing = {
+  ...withVk,
+  vkSha256: vkHash,
+  liveJwks: false,
+  getJson: async (url) => (url.endsWith("/jwks/google/kid-1.json") ? mirrored.keys : {}),
+  getBytes: async (url) => {
+    if (url.endsWith("/keys/enroll-v1.vk")) return vkBytes;
+    const err = new Error(`GET ${url} -> 404`);
+    err.status = 404;
+    throw err;
+  },
+};
+const ahead = await verifyEnrollProofs([{ ...rowEnroll, seq: "700" }], { ...proofMissing, proofsBase: "https://mirror.example/", mirroredThrough: 585 });
+check(ahead.status === "pass" && ahead.failed === 0 && ahead.pending === 1, `J: an ENROLL past the mirror's coverage waits for the next shard instead of failing (${ahead.reason})`);
+check(ahead.notes.some((n) => n.includes("not mirrored yet")), "J: and the run says how many are waiting");
+const inside = await verifyEnrollProofs([{ ...rowEnroll, seq: "500" }], { ...proofMissing, proofsBase: "https://mirror.example/", mirroredThrough: 585 });
+check(inside.status === "fail" && inside.failed === 1, "J: a proof missing INSIDE the mirrored range is still a fail");
+const noManifest = await verifyEnrollProofs([{ ...rowEnroll, seq: "700" }], { ...proofMissing, proofsBase: "https://mirror.example/", mirroredThrough: null });
+check(noManifest.status === "fail" && noManifest.failed === 1, "J: with no manifest to say what is mirrored, an unreadable proof stays a fail");
+
 console.log(failed ? "\nRESULT: FAIL" : "\nRESULT: PASS");
 process.exit(failed ? 1 : 0);

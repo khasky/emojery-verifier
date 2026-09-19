@@ -26,14 +26,18 @@ export async function getJson(url) {
   return res.json();
 }
 
+// The status rides on the error so a caller can tell an unpublished file (404)
+// from a broken mirror. Both readers below do it.
 export async function getBytes(url) {
   const res = await getRes(url);
-  if (!res.ok) throw new Error(`GET ${url} -> ${res.status}`);
+  if (!res.ok) {
+    const err = new Error(`GET ${url} -> ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
   return new Uint8Array(await res.arrayBuffer());
 }
 
-// The status rides on the error so a caller can tell an unpublished file (404)
-// from a broken mirror.
 export async function getText(url) {
   const res = await getRes(url);
   if (!res.ok) {

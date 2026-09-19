@@ -11,7 +11,7 @@ import { pathToFileURL } from "node:url";
 import { checkConsistencyChain, checkpointForShardCoverage, verifyCheckpointArchive } from "./checks/archive.mjs";
 import { checkCheckpointSignature, checkFreshness, checkGithubAnchor } from "./checks/checkpoint.mjs";
 import { checkIdentityTrack } from "./checks/identity-track.mjs";
-import { checkEntriesSource, checkHashChainReplay, checkMerkleRoot, fetchEntries, manifestBase, rehashLeaves } from "./checks/leaves.mjs";
+import { checkEntriesSource, checkHashChainReplay, checkMerkleRoot, fetchEntries, manifestBase, manifestCoverage, rehashLeaves } from "./checks/leaves.mjs";
 import { verifyOts } from "./checks/ots.mjs";
 import { verifyRekor } from "./checks/rekor.mjs";
 import { checkRevocationFeed, checkStructure, checkWipes, reportFold } from "./checks/semantics.mjs";
@@ -154,6 +154,9 @@ async function main() {
       repo: o.repo,
       // The proof bodies sit beside the shard bodies, wherever those are served from.
       proofsBase: await proofsBaseFor(o),
+      // How far those bodies reach: an ENROLL past it is inside the publisher's
+      // batching window, not a leaf whose proof has gone missing.
+      mirroredThrough: await manifestCoverage(o.repo),
       keysPerAccount: o.keysPerAccount,
       allowUnsignedVotes: o.allowUnsignedVotes,
       blindPubkey,

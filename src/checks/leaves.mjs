@@ -53,6 +53,19 @@ async function readManifest(repo) {
   return shards;
 }
 
+// The highest seq the published shards reach. Bodies are batched, so the mirror
+// routinely stops short of the signed tip, and a leaf past this is not missing -
+// it is not published yet. Null when this log publishes no manifest at all.
+export async function manifestCoverage(repo) {
+  if (!repo) return null;
+  try {
+    const shards = await readManifest(repo);
+    return shards.reduce((high, s) => Math.max(high, Number(s.to)), 0);
+  } catch {
+    return null;
+  }
+}
+
 // Shards are published in batches, so a mirrored source routinely stops short of the
 // signed tip. With --api the gap is fetched; without it the run says so and the
 // caller steps back to the newest checkpoint the leaves in hand fully cover.

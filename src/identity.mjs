@@ -157,7 +157,7 @@ async function liveJwksFor(iss, getJson, cache) {
 // cross-check, the provider). Returns
 //   { status: "skip" | "pass" | "fail", reason, checked, failed, notes[] }
 // where a skip names the pin or artifact that is missing.
-export async function verifyEnrollProofs(entries, { repo, proofsBase, getJson, getBytes, vkSha256, saltCommitment, issuers, audiences, bbVersion, liveJwks = true, onProgress }) {
+export async function verifyEnrollProofs(entries, { repo, proofsBase, getJson, getBytes, vkSha256, saltCommitment, issuers, audiences, bbVersion, mirroredThrough = null, liveJwks = true, onProgress }) {
   const enrolls = entries.filter((e) => e.op === OP_ENROLL);
   const notes = [];
   const result = (status, reason, extra = {}) => ({ status, reason, checked: 0, failed: 0, notes, ...extra });
@@ -200,10 +200,16 @@ export async function verifyEnrollProofs(entries, { repo, proofsBase, getJson, g
   const live = new Map();
   let failed = 0;
   let checked = 0;
+  // Proof bodies are published in the same batches as the shard bodies, so the
+  // newest leaves routinely have none yet. That is the publisher's window, not a
+  // missing proof, and it is counted rather than failed - but only past the point
+  // the manifest says the mirror reaches, so a hole inside it still fails.
+  let pending = 0;
   const fail = (e, why) => {
     failed++;
     notes.push(`seq=${e.seq}: ${why}`);
   };
+  const notMirroredYet = (e, err) => err.status === 404 && mirroredThrough !== null && Number(e.seq) > mirroredThrough;
   try {
     for (const [i, e] of enrolls.entries()) {
       checked++;
@@ -253,7 +259,8 @@ export async function verifyEnrollProofs(entries, { repo, proofsBase, getJson, g
       try {
         proof = await getBytes(`${proofsBase}${proofObjectPath(e.proof_hash)}`);
       } catch (err) {
-        fail(e, `proof body ${proofObjectPath(e.proof_hash)} could not be read (${err.message})`);
+        if (notMirroredYet(e, err)) pending++;
+        else fail(e, `proof body ${proofObjectPath(e.proof_hash)} could not be read (${err.message})`);
         continue;
       }
       if (bytesToHex(await sha256(proof)) !== e.proof_hash) {
@@ -274,5 +281,6 @@ export async function verifyEnrollProofs(entries, { repo, proofsBase, getJson, g
   } finally {
     await api.destroy();
   }
-  return result(failed ? "fail" : "pass", `${checked} ENROLL proof(s), ${failed} bad`, { checked, failed });
+  if (pending) notes.push(`${pending} ENROLL proof(s) past seq ${mirroredThrough} are not mirrored yet - the publisher batches bodies, so they are checked once the next shard lands`);
+  return result(failed ? "fail" : "pass", `${checked - pending} ENROLL proof(s), ${failed} bad${pending ? `, ${pending} awaiting the mirror` : ""}`, { checked, failed, pending });
 }
