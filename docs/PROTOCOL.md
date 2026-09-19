@@ -38,7 +38,7 @@ All five strings are NULL on `op=4..7`. After `base`:
 | `op=6` ISSUE | `lp(nullifier) \|\| u64be(epoch) \|\| lpb(account_pubkey32) \|\| lpb(blinded_hash32) \|\| lpb(account_sig64)` |
 | `op=7` KEY | `u64be(epoch) \|\| lpb(client_pubkey32) \|\| lpb(key_sig256)` |
 
-`nullifier` is hashed as its 64-character hex string (`lp`), the byte fields as raw bytes (`lpb`). On the wire (`/log/entries` and the shards) `account_pubkey`, `account_sig` and `blinded_hash` are hex where the leaf carries them and ABSENT where it does not - a field is omitted rather than spelled out as `null`, and a reader must treat the two the same: a row that lacks the key hashes it as NULL. An ENROLL row carries `proof_hash`, the SHA-256 of its proof, as 64 hex characters; the proof itself is 14 KB and is not in the row (see "Enrolment proofs" below).
+`nullifier` is hashed as its 64-character hex string (`lp`), the byte fields as raw bytes (`lpb`). On the wire (the published chunks) `account_pubkey`, `account_sig` and `blinded_hash` are hex where the leaf carries them and ABSENT where it does not - a field is omitted rather than spelled out as `null`, and a reader must treat the two the same: a row that lacks the key hashes it as NULL. An ENROLL row carries `proof_hash`, the SHA-256 of its proof, as 64 hex characters; the proof itself is 14 KB and is not in the row (see "Enrolment proofs" below).
 
 ```
 leaf_hash  = SHA256(0x00 || leaf bytes)
@@ -54,7 +54,7 @@ The Merkle root is the binary-counter fold over the leaf hashes in `seq` order: 
 sth = u64be(tree_size) || root_hash32 || u64be(ts)
 ```
 
-signed with the log's Ed25519 key. `/log/checkpoint` and `checkpoints/latest.json` in the log repository both serve `{ tree_size, root_hash, ts, signature }`; `checkpoints/*.ndjson` shards hold every checkpoint ever published, one per line.
+signed with the log's Ed25519 key. `checkpoints/latest.json` in the log repository carries `{ tree_size, root_hash, ts, signature }`; `checkpoints/*.ndjson` shards hold every checkpoint ever published, one per line.
 
 ### Signed messages
 
@@ -74,14 +74,13 @@ Each check has a key in the `--json` summary. A check that cannot run reports `s
 | --- | --- |
 | `signature` | the checkpoint's Ed25519 signature verifies under the pinned (or `--pubkey`) key. |
 | `freshness` | the live tip is at most `--max-checkpoint-age-hours` old (default 168; `0` skips). Judged on the tip, never on a checkpoint an offline run stepped back to. A `ts` more than 1 hour in the future is a failure of its own: the `ts` is inside the signed tree head, and a forward-dated one would sail under any threshold forever. |
-| `github_anchor` | with `--repo` and `--api`: `checkpoints/latest.json` names the same `tree_size` and `root_hash` as `/log/checkpoint` (a "split view" shows one history to the API and another to everyone else). Offline the anchor is the checkpoint under test, so the check is skipped rather than compared with itself. |
 | `leaf_hashes` | every served leaf, re-serialized from its fields, hashes to the served `leaf_hash`. |
 | `merkle_root` | all `tree_size` leaves were fetched, and the root recomputed from the verifier's own leaf hashes equals the checkpoint's `root_hash`. |
 | `hash_chain` | the published `entry_hash` chain replays from genesis with the recomputed leaf hashes. The root pins which leaves the tree holds; the chain pins their order. A row without `entry_hash` stops the replay at that row. |
 | `archive` | with `--repo`: every line of `checkpoints/*.ndjson` parses; no two archived checkpoints disagree on one `tree_size`; every archived signature verifies; `ts` is monotone in `tree_size`; no archived `tree_size` exceeds the live tip; the live checkpoint is present; and every archived root equals the root recomputed from today's leaves at that `tree_size`, so the whole published history lies on one append-only line and an internally consistent rewrite still fails. |
 | `rekor` | with `--repo` (unless `--no-rekor`): the newest `rekor/<tree_size>.json` sidecar at or below the tip names the same `root_hash` as the archived checkpoint (repo-local, a mismatch is a hard fail), and the entry it names in the pinned Rekor instance (`https://rekor.sigstore.dev`, never the URL the sidecar carries) holds exactly the STH bytes (as content, or as their SHA-256), our Ed25519 signature, and a PEM of the SPKI DER of the log key (`302a300506032b6570032100 \|\| raw32`). An unreachable Rekor or an unparseable entry is a skip; only disagreeing bytes fail. |
-| `entries_source` | with `--entries repo` and `--api`: the first API page of `/log/entries` (1000 leaves, immutable) agrees with the shard-derived leaves in `seq` and `leaf_hash`, so a run that audits the shards still notices a broken or disagreeing API. |
-| `revocations` | with `--api`: the set of `seq` values the revocation feed lists equals the set of `op=4` leaves in the log. |
+| `revocations` | the set of `seq` values `revocations/latest.json` lists equals the set of `op=4` leaves in the log, clamped to the audited `tree_size`. A log with no tombstone publishes no file, which is a skip. |
+| `served_counts` | the exact `total` the public badge carries for the `--counts-sample` largest targets equals the fold of the log for those targets. The one check that holds the log against a number a reader is actually shown; `--counts-base ""` or `--counts-sample 0` skips it. |
 | `invariants` | the structural invariants A, B, C, D, E below hold. |
 | `wipe_completeness` | invariant F below holds. |
 | `identity_structure` | invariants G (structural half), H (count half) and I hold; unsigned votes fail here unless `--allow-unsigned-votes`. |
@@ -135,36 +134,27 @@ What a passing proof establishes: the operator held an RS256 `id_token` signed b
 
 ### Leaves
 
-`GET /log/entries?from=&to=` serves up to 1000 rows per page. The same rows are published as `<start>-<end>.ndjson` shards of 10000 leaves (`000000000001-000000010000.ndjson`, ...), not charged against the API's per-IP `/log/*` rate limit.
+The log is published as files, and nothing about reading it goes through an API.
 
-Where those shards live depends on the log. A log may keep them in the repository itself (`entries/<start>-<end>.ndjson`, read with `--entries repo`), or keep only a commitment to them and serve the bodies from object storage:
+- `entries/<from>-<to>.ndjson` — a chunk: the leaves one publish covered, one JSON object per line. A chunk is written once and never touched again, so a copy of it is either the published bytes or refused.
+- `entries/manifest/<first leaf>.ndjson` — one line per chunk, `{from, to, count, bytes, sha256}`, at most 1000 lines per file. The file names need no listing: the first is leaf 1, and the next one starts at the `to` of the last line of the one before it. No directory listing means no GitHub API, and no rate limit between a reader and the manifest.
+- `entries/mirrors.json` — `{"base": "<url>"}`, where the bodies are served from. `--entries-base <url>` overrides it. A chunk is admitted only if its bytes hash to the `sha256` the manifest committed to, so which host served it decides nothing; anyone may publish a copy and name it in their own file.
 
-- `entries/manifest/<start>-<end>.ndjson` — one line per shard, `{from, to, count, bytes, sha256}`, covering 1000 shards each. Read with `--entries manifest`. The file names are DERIVED from the range, not listed: no directory listing, so no GitHub API and no rate limit stands between a reader and the manifest.
-- `entries/mirrors.json` — `{"base": "<url>"}`, where the bodies are served from. `--entries-base <url>` overrides it. A shard is admitted only if its bytes hash to the `sha256` the manifest committed to, so which host served it decides nothing; anyone may publish a copy and name it in their own file.
-
-Either way the shards are published in batches and trail the live checkpoint by up to a batch of leaves; a shard that does not exist yet (404) is that window, any other failure is a broken mirror. With `--api` the missing tail is fetched from the API; without it the run steps back to the newest archived checkpoint the shards fully cover, names it and the tip, and audits that one (the tip's own Rekor sidecar is still checked). A mirror whose shards reach no archived checkpoint reports the Merkle check as a skip: incomplete shards are not evidence against the log. The whole log is held in memory (about a gigabyte around a million leaves); past a few million, fold and verify from a streamed source instead.
+A publish lands a tick behind the checkpoint that covers it, so the manifest routinely stops one chunk short of the signed tip. The run then steps back to the newest archived checkpoint the chunks fully cover, names it and the tip, and audits that one (the tip's own Rekor sidecar is still checked). Chunks that reach no archived checkpoint report the Merkle check as a skip: an incomplete mirror is not evidence against the log. The whole log is held in memory (about a gigabyte around a million leaves); past a few million, fold and verify from a streamed source instead.
 
 ### Enrolment proofs
 
-An ENROLL leaf names its proof by digest rather than carrying it: a proof is 14 KB, and a line carrying one costs every reader of the shard that much whether or not they check proofs. The body is served from the entries base as `proofs/<first two hex of the digest>/<digest>.bin`, and the verifier refuses any body that does not hash to the digest the leaf committed to before it reaches the prover — bytes that are not the ones the log committed to must never be reported as "a proof that did not verify".
+An ENROLL leaf names its proof by digest rather than carrying it: a proof is 14 KB, and a line carrying one costs every reader of the chunk that much whether or not they check proofs. The body is served from the entries base as `proofs/<first two hex of the digest>/<digest>.bin`, and the verifier refuses any body that does not hash to the digest the leaf committed to before it reaches the prover — bytes that are not the ones the log committed to must never be reported as "a proof that did not verify".
 
-Proof bodies are published in the same batches as the shard bodies, so the newest ENROLL leaves routinely have none yet. A 404 past what the manifest says is mirrored is that window and is counted, not failed; a 404 inside it is a failure, and so is one on a log whose manifest cannot be read at all.
+Proof bodies are published with the chunk that names them, so an ENROLL past the manifest has none yet. A 404 past what the manifest says is mirrored is that window and is counted, not failed; a 404 inside it is a failure, and so is one on a log whose manifest cannot be read at all.
 
-`GET /log/checkpoint` answers `404 {"error":"no_checkpoint"}` for a log that has never signed anything; the verifier reports that as an empty log (PASS, `checks: { log: "empty" }`). Any other 404 fails the run.
+A log that has never signed anything publishes no `checkpoints/latest.json`; the verifier reports that as an empty log (PASS, `checks: { log: "empty" }`). Any other failure to read it fails the run.
 
 The GitHub Contents API lists a directory up to 1000 entries without paginating; past that the verifier re-lists through the Git Trees API, and a Trees listing that itself truncates is reported so the archive and Rekor completeness checks are read as "over the listed subset". `GITHUB_TOKEN` lifts the unauthenticated quota; a rate-limited listing is a skip. The entries manifest is never listed - its file names are derived - so reading the leaves does not depend on that quota at all. Transient HTTP failures (429, 5xx) on the API and the raw repository are retried up to 4 times, honouring `Retry-After`.
 
-### Revocation feed
+### Tombstone file
 
-The revoke track has three read paths; every one answers `has_more`, so a partial answer can never be mistaken for the whole list. `revocations` is always ascending by `seq`.
-
-| Request | Returns | `has_more` means | `next_from` |
-| --- | --- | --- | --- |
-| `GET /log/revocations/range?from=&to=` | the `op=4` leaves in that `seq` range, capped at 1000 `seq` values | always `false`, the range bounds the answer | `null` |
-| `GET /log/revocations/target?target=site/id[&from=]` | one target's tombstones, 1000 per page, keyset-paginated by `seq` | more pages exist for this target | pass it back as `&from=` |
-| `GET /log/revocations` | the 1000 newest tombstones | older tombstones exist | `null`; use the range path to walk back |
-
-The bare feed refuses range parameters with a `400` naming the path that answers them (`{"error": "bad_range", "use": "/log/revocations/range"}`). The verifier reads the bare feed and, when `has_more` is true, walks the range path over the whole tree; either way it clamps to the audited `tree_size`, since the feed reads the live log. An auditor of your own must page the same way: the bare feed is a "what happened lately" view, and stopping at its first response undercounts a log with more than 1000 tombstones.
+`revocations/latest.json` carries every `op=4` leaf the log holds, as `{ tree_size, revocations: [{ seq, ts, revoke_seq, reason_code, evidence_hash, target: { site, target_id } }] }`, ascending by `seq`. Nothing in it is new: every field is already in the chunk line of the leaf it names. It exists for the readers who never fold the log - the site renders it - and the verifier compares its set of `seq` values with the `op=4` leaves, clamped to the audited `tree_size`, so a tombstone appended after the checkpoint under test is not read as a mismatch. A log with no tombstone publishes no file.
 
 ## Bitcoin anchor (`--ots`)
 

@@ -25,22 +25,19 @@ Node 20 or newer. Install once with `pnpm install` (or run without a checkout: `
 Verify production:
 
 ```
-node src/verify.mjs --api https://api.emojery.app \
-  --repo https://raw.githubusercontent.com/khasky/emojery-log/main
+node src/verify.mjs --repo https://raw.githubusercontent.com/khasky/emojery-log/main
 ```
 
 Deep Bitcoin audit (slower; passes once the OpenTimestamps proof has matured, hours to days after a checkpoint):
 
 ```
-node src/verify.mjs --ots --api https://api.emojery.app \
-  --repo https://raw.githubusercontent.com/khasky/emojery-log/main
+node src/verify.mjs --ots --repo https://raw.githubusercontent.com/khasky/emojery-log/main
 ```
 
 Machine-readable result on stdout, one JSON object (`result`, `tree_size`, `ts`, `checks`, `duration_sec`; every check is `pass`, `fail` or `skip`):
 
 ```
-node src/verify.mjs --json --api https://api.emojery.app \
-  --repo https://raw.githubusercontent.com/khasky/emojery-log/main
+node src/verify.mjs --json --repo https://raw.githubusercontent.com/khasky/emojery-log/main
 ```
 
 While extension 1.0.0 is still served, its votes carry no client signature and the identity check fails on them; add `--allow-unsigned-votes` to admit them. The flag is temporary and goes away when that version is retired.
@@ -97,8 +94,10 @@ The same tool verifies a staging deployment or a fork; the flags below replace t
 | Flag | Meaning |
 | --- | --- |
 | `--pubkey <base64>` | the deployment's log signing key (raw Ed25519) |
-| `--entries <source>` | where the leaves come from (default `api`): `repo` reads the log repository's `entries/` shards, and refuses when the repository publishes a manifest instead of shards; `manifest` reads the repository's `entries/manifest` and fetches each shard body from the host it names, checking it against its `sha256`; `none` reads no leaves at all (below). With no `--api`, all three audit a mirror offline |
-| `--entries-base <url>` | where the shard bodies and the ENROLL proof bodies are fetched from, instead of the host `entries/mirrors.json` names. Any copy will do: the published digest is what decides |
+| `--entries <source>` | where the leaves come from (default `manifest`): `manifest` reads the repository's `entries/manifest` and fetches each chunk body from the host it names, checking it against its `sha256`; `none` reads no leaves at all (below) |
+| `--entries-base <url>` | where the chunk bodies and the ENROLL proof bodies are fetched from, instead of the host `entries/mirrors.json` names. Any copy will do: the published digest is what decides |
+| `--counts-base <url>` | host serving the public reaction badges, whose exact total is compared with the fold (default: the production API pinned in `src/verify.mjs`; `""` turns the check off) |
+| `--counts-sample <n>` | how many of the largest targets to compare that way (default 10; 0 disables) |
 | `--no-proofs` | skip the ENROLL proof check, the one that loads `@aztec/bb.js` |
 | `--no-rekor` | skip the Rekor witness check |
 | `--wipe-grace-hours <n>` | grace for account wipes still in flight (default 48; a quiescent log can be audited with 0) |
@@ -112,14 +111,7 @@ The same tool verifies a staging deployment or a fork; the flags below replace t
 | `--audiences <id,...>` | the deployment's OAuth client ids |
 | `--keys-per-account <n>` | epoch keys one account may hold per epoch (default 10; 0 lifts the bound) |
 
-Offline audit of a mirror, no request to the operator's API:
-
-```
-node src/verify.mjs --entries manifest \
-  --repo https://raw.githubusercontent.com/khasky/emojery-log/main
-```
-
-The shards are published in batches, so an offline run audits the newest published checkpoint the shards fully cover, says which one, and still cross-checks the tip's Rekor witness. With `--api` as well, the shards carry the bulk and only the missing tail is fetched.
+A publish lands a tick behind the checkpoint that covers it, so a run audits the newest published checkpoint the chunks fully cover, says which one, and still cross-checks the tip's Rekor witness.
 
 `--entries none` skips the leaves entirely: it verifies every archived checkpoint signature, refuses two signatures that disagree on one tree size, replays the chain of consistency proofs published beside them, and cross-checks the tip against its Rekor witness. That covers everything the log published about its own history, in seconds and with no download. It covers nothing about the leaves themselves - the counter fold and invariants A-J need them - and the run prints which checks it skipped.
 
@@ -145,7 +137,6 @@ jobs:
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: |
           node src/verify.mjs --json --allow-unsigned-votes \
-            --api https://api.emojery.app \
             --repo https://raw.githubusercontent.com/khasky/emojery-log/main > result.json
           cat result.json
           [ "$(node -p "require('./result.json').result")" = pass ] || exit 1
@@ -156,7 +147,7 @@ A red run means the log did not verify; `result.json` names the check. The job r
 ## How it works
 
 - [docs/PROTOCOL.md](docs/PROTOCOL.md): the byte layouts, the invariants, the identity track and the known-answer tests, everything needed to re-implement the checks.
-- [`emojery-log`](https://github.com/khasky/emojery-log): the public data repository this tool reads (checkpoints, entry shards, Rekor and OpenTimestamps sidecars, keys).
+- [`emojery-log`](https://github.com/khasky/emojery-log): the public data repository this tool reads (checkpoints, the entries manifest, the tombstone file, Rekor and OpenTimestamps sidecars, keys).
 - [Sigstore Rekor](https://docs.sigstore.dev/logging/overview/) and [OpenTimestamps](https://opentimestamps.org/): the two independent witnesses.
 
 ## Self-test
