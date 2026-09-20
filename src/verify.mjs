@@ -41,7 +41,11 @@ const PINNED_AUDIENCES = [
 const PINNED_ISSUERS = DEFAULT_ISSUERS;
 
 // The host whose public badges carry the served count. It is the one number a reader
-// is actually shown, so the fold is held against it; --counts-base "" opts out.
+// is actually shown, so the fold is held against it. Pinned to the SAME deployment as
+// PINNED_PUBKEY_B64: a staging log or a fork signs with its own key and serves its own
+// counts, and holding one deployment's log against another's badges disagrees on every
+// target. So the default applies only while the log key is the pinned one; anywhere else
+// the check needs --counts-base and skips without it.
 const PINNED_COUNTS_BASE = "https://api.emojery.app";
 
 // keys/enroll-v1.json records the bb the operator proved with; a drift from the
@@ -147,7 +151,7 @@ async function main() {
     await checkRevocationFeed(o.repo, entries, treeSize);
     checkStructure(entries);
     checkWipes(entries, cp, o.wipeGraceHours);
-    await checkServedCounts(entries, { base: o.countsBase ?? PINNED_COUNTS_BASE, sample: o.countsSample });
+    await checkServedCounts(entries, { base: o.countsBase ?? (pubkey === PINNED_PUBKEY_B64 ? PINNED_COUNTS_BASE : ""), sample: o.countsSample });
 
     section("Identity");
     await checkIdentityTrack(entries, {
