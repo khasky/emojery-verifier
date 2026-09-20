@@ -14,7 +14,7 @@ export async function checkIdentityTrack(entries, { repo, proofsBase, keysPerAcc
   details(identity.violations, 20);
   check(identity.violations.length === 0, `identity invariants hold (${identity.violations.length} violation(s))`, "identity_structure");
   if (identity.unsignedVotes > 0 && !allowUnsignedVotes) {
-    check(false, `${identity.unsignedVotes} vote(s) carry no client signature (pass --allow-unsigned-votes while 1.0.0 clients are served)`, "identity_structure");
+    check(false, `${identity.unsignedVotes} vote(s) carry no client signature (pass --allow-unsigned-votes to admit them)`, "identity_structure");
   }
 
   const signing = phase("verifying vote, issue and key signatures");

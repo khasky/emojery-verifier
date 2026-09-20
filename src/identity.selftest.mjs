@@ -99,16 +99,16 @@ check(enrollBytes.endsWith(`00000020${"55".repeat(32)}`) && enrollBytes.length =
 const issueBytes = bytesToHex(serializeLeaf(issue));
 check(issueBytes.endsWith(`00000020${"55".repeat(32)}00000020${"66".repeat(32)}00000040${"77".repeat(64)}`), "ISSUE bytes end in lpb(account_pubkey) || lpb(blinded_hash) || lpb(account_sig)");
 
-// A vote without a client key keeps the legacy 8-field bytes, byte-for-byte.
-const legacy = { seq: 5n, ts: TS, op: 1, site: "github", targetId: "gh:o/r", reaction: "👍", prevReaction: null, userRef };
-check(serializeLeaf(legacy).length + 4 + 32 + 4 + 64 + 4 + NONCE.length === serializeLeaf(votes).length, "signed-vote tail is lpb(pubkey)||lpb(sig)||lp(nonce) after the legacy bytes");
-check(bytesToHex(serializeLeaf({ ...legacy, clientPubkey: null })) === bytesToHex(serializeLeaf(legacy)), "an explicit null pubkey is the legacy leaf");
+// A vote without a client key keeps the bare 8-field bytes, byte-for-byte.
+const unsigned = { seq: 5n, ts: TS, op: 1, site: "github", targetId: "gh:o/r", reaction: "👍", prevReaction: null, userRef };
+check(serializeLeaf(unsigned).length + 4 + 32 + 4 + 64 + 4 + NONCE.length === serializeLeaf(votes).length, "signed-vote tail is lpb(pubkey)||lpb(sig)||lp(nonce) after the bare bytes");
+check(bytesToHex(serializeLeaf({ ...unsigned, clientPubkey: null })) === bytesToHex(serializeLeaf(unsigned)), "an explicit null pubkey is the bare leaf");
 
-// --- leafHashFromEntry: rows in the /log/entries wire shape ------------------------
+// --- leafHashFromEntry: rows in the published chunk shape -------------------------
 const rowVote = { seq: "5", ts: TS, op: 1, site: "github", target_id: "gh:o/r", reaction: "👍", prev_reaction: null, user_ref: userRef, client_pubkey: bytesToHex(PUBKEY), client_sig: bytesToHex(SIG), client_nonce: NONCE };
 check(bytesToHex(await leafHashFromEntry(rowVote)) === bytesToHex(await leafHash(votes)), "row -> signed vote leaf_hash");
-const rowOld = { seq: "5", ts: TS, op: 1, site: "github", target_id: "gh:o/r", reaction: "👍", prev_reaction: null, user_ref: userRef };
-check(bytesToHex(await leafHashFromEntry(rowOld)) === bytesToHex(await leafHash(legacy)), "row without the identity fields (old shard line) -> legacy leaf_hash");
+const rowUnsigned = { seq: "5", ts: TS, op: 1, site: "github", target_id: "gh:o/r", reaction: "👍", prev_reaction: null, user_ref: userRef };
+check(bytesToHex(await leafHashFromEntry(rowUnsigned)) === bytesToHex(await leafHash(unsigned)), "row without the identity fields -> bare leaf_hash");
 // The publisher omits a field the leaf does not carry rather than writing it null.
 // Both spellings have to reach the same leaf hash, or every line published before
 // that change would stop verifying.
@@ -148,7 +148,7 @@ const enrollRow = (seq, nul, ak = AK1) => ({ ...rowEnroll, seq: String(seq), nul
 const issueRow = (seq, nul, epoch = "1234", ak = AK1, bh = freshBlinded()) => ({ ...rowIssue, seq: String(seq), nullifier: nul, epoch, account_pubkey: ak, blinded_hash: bh });
 const keyRow = (seq, pk, epoch = "1234") => ({ ...rowKey, seq: String(seq), client_pubkey: pk, epoch });
 const voteRow = (seq, pk, ref, nonce) => ({ ...rowVote, seq: String(seq), client_pubkey: pk, user_ref: ref, client_nonce: nonce });
-const good = [enrollRow(1, nullifier), issueRow(2, nullifier), keyRow(3, bytesToHex(PUBKEY)), voteRow(4, bytesToHex(PUBKEY), userRef, "n1"), voteRow(5, bytesToHex(PUBKEY), userRef, "n2"), rowOld];
+const good = [enrollRow(1, nullifier), issueRow(2, nullifier), keyRow(3, bytesToHex(PUBKEY)), voteRow(4, bytesToHex(PUBKEY), userRef, "n1"), voteRow(5, bytesToHex(PUBKEY), userRef, "n2"), rowUnsigned];
 const goodResult = await checkIdentityInvariants(good);
 check(goodResult.violations.length === 0, `identity invariants: a consistent track passes (${goodResult.violations.join("; ")})`);
 check(goodResult.signedVotes === 2 && goodResult.unsignedVotes === 1 && goodResult.enrolls === 1 && goodResult.issues === 1 && goodResult.keys === 1, "identity invariants: counts");

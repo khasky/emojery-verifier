@@ -18,7 +18,7 @@ Every entry (leaf) of the log has a sequence number `seq` (1-based), a timestamp
 
 A normal "unreact" is `op=3`. Tombstones are append-only corrections: when an account is erased or a counted reaction has to be reversed, the original leaf is never edited or deleted; an `op=4` leaf is appended instead, with `revoke_seq` pointing at the reversed leaf, a public machine-readable `reason_code` (`erasure_self`, `erasure_admin`, or an abuse-correction label) and an `evidence_hash` that may pin a published evidence report (`null` for routine account erasure).
 
-Votes carry a pseudonym `user_ref`. A signed vote ends in `client_pubkey || client_sig || client_nonce` and its pseudonym is `user_ref = SHA256(client_pubkey)`; a vote cast by extension 1.0.0 has none of the three. Pseudonyms rotate per epoch and cannot be linked across epochs, a privacy property of the log.
+Votes carry a pseudonym `user_ref`. A signed vote ends in `client_pubkey || client_sig || client_nonce` and its pseudonym is `user_ref = SHA256(client_pubkey)`; a vote without a client key carries none of the three. Pseudonyms rotate per epoch and cannot be linked across epochs, a privacy property of the log.
 
 ### Leaf bytes
 
@@ -32,7 +32,7 @@ All five strings are NULL on `op=4..7`. After `base`:
 
 | Leaf | Bytes after `base` |
 | --- | --- |
-| `op=1..3`, signed | `lpb(client_pubkey32) \|\| lpb(client_sig64) \|\| lp(client_nonce)` (a 1.0.0 vote appends nothing) |
+| `op=1..3`, signed | `lpb(client_pubkey32) \|\| lpb(client_sig64) \|\| lp(client_nonce)` (a vote with no client key appends nothing) |
 | `op=4` | `u64be(revoke_seq) \|\| lp(reason_code) \|\| lpb(evidence_hash)` |
 | `op=5` ENROLL | `lp(nullifier) \|\| lp(iss) \|\| lp(aud) \|\| lp(kid) \|\| lpb(proof_hash32) \|\| lpb(salt_commitment32) \|\| lpb(account_pubkey32)` |
 | `op=6` ISSUE | `lp(nullifier) \|\| u64be(epoch) \|\| lpb(account_pubkey32) \|\| lpb(blinded_hash32) \|\| lpb(account_sig64)` |

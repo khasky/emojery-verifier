@@ -40,9 +40,8 @@ ${USAGE}
                             the manifest names
   --pubkey <base64>         the log's Ed25519 public key; defaults to the production
                             key pinned in src/verify.mjs (pass it for staging or a fork)
-  --allow-unsigned-votes    admit votes that carry no client signature. Temporary:
-                            votes cast by extension 1.0.0 are unsigned, and the flag
-                            goes away when that version is retired
+  --allow-unsigned-votes    admit votes that carry no client signature, which the
+                            identity check refuses without it
   --ots                     deep audit: walk the OpenTimestamps proof to a Bitcoin
                             block (needs --repo; passes once the proof has matured)
   --json                    one machine-readable summary on stdout, report on stderr

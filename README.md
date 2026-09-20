@@ -40,7 +40,7 @@ Machine-readable result on stdout, one JSON object (`result`, `tree_size`, `ts`,
 node src/verify.mjs --json --repo https://raw.githubusercontent.com/khasky/emojery-log/main
 ```
 
-While extension 1.0.0 is still served, its votes carry no client signature and the identity check fails on them; add `--allow-unsigned-votes` to admit them. The flag is temporary and goes away when that version is retired.
+A vote that carries no client signature fails the identity check. `--allow-unsigned-votes` admits it instead, which is what a log holding such votes needs to verify at all.
 
 ## Reading the result
 

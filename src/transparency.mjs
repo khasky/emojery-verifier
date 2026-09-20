@@ -90,8 +90,8 @@ export async function sha256(b) {
 
 // canonical = u64(seq) || u64(ts) || u8(op)
 //           || lp(site) || lp(target_id) || lp(reaction) || lp(prev_reaction) || lp(user_ref)
-// op 1..3 with a client key appends || lpb(pubkey) || lpb(sig) || lp(nonce) — a legacy
-//   (1.0.0, unsigned) vote keeps the bare 8-field bytes;
+// op 1..3 with a client key appends || lpb(pubkey) || lpb(sig) || lp(nonce) — a vote
+//   without one keeps the bare 8-field bytes;
 // op=4 appends || u64(revoke_seq) || lp(reason_code) || lpb(evidence_hash);
 // op=5 appends || lp(nullifier) || lp(iss) || lp(aud) || lp(kid) || lpb(proof_hash32) || lpb(salt_commitment) || lpb(account_pubkey);
 // op=6 appends || lp(nullifier) || u64(epoch) || lpb(account_pubkey) || lpb(blinded_hash) || lpb(account_sig);
@@ -430,7 +430,7 @@ export function checkStructuralInvariants(entries) {
       violations.push(`seq=${e.seq}: unexpected op=${op}`);
       continue;
     }
-    // A signed vote (1.0.1+) carries its key, signature and nonce; a legacy vote has none
+    // A signed vote carries its key, signature and nonce; an unsigned one carries none
     // of the three. Half a tail is neither.
     if (e.client_pubkey != null || e.client_sig != null || e.client_nonce != null) {
       if (!isHex(e.client_pubkey, 64)) violations.push(`seq=${e.seq}: client_pubkey is not 32 bytes hex`);
@@ -515,8 +515,8 @@ function identityLeafShape(e) {
   return v;
 }
 
-// A vote leaf that carries a client key (1.0.1+). A legacy 1.0.0 vote has none and is
-// admitted only under --allow-unsigned-votes.
+// A vote leaf that carries a client key. One without is admitted only under
+// --allow-unsigned-votes.
 export function isSignedVote(e) {
   return (e.op === 1 || e.op === 2 || e.op === 3) && e.client_pubkey != null;
 }
