@@ -96,7 +96,7 @@ The same tool verifies a staging deployment or a fork; the flags below replace t
 | `--pubkey <base64>` | the deployment's log signing key (raw Ed25519) |
 | `--entries <source>` | where the leaves come from (default `manifest`): `manifest` reads the repository's `entries/manifest` and fetches each chunk body from the host it names, checking it against its `sha256`; `none` reads no leaves at all (below) |
 | `--entries-base <url>` | where the chunk bodies and the ENROLL proof bodies are fetched from, instead of the host `entries/mirrors.json` names. Any copy will do: the published digest is what decides |
-| `--counts-base <url>` | host serving the public reaction badges, whose exact total is compared with the fold. Defaults to the pinned production API, and only while `--pubkey` is the pinned log key too: another deployment signs with its own key and serves its own counts, so there this flag is required and the check skips without it |
+| `--counts-base <url>` | host serving the public reaction badges, whose exact total is **reported** against the fold. Defaults to the pinned production API, and only while `--pubkey` is the pinned log key too: another deployment signs with its own key and serves its own counts, so there this flag is required and the comparison is skipped without it. A disagreement is a note, never a failure - the fold stops at the audited checkpoint while the served count is live |
 | `--counts-sample <n>` | how many of the largest targets to compare that way (default 10; 0 disables) |
 | `--no-proofs` | skip the ENROLL proof check, the one that loads `@aztec/bb.js` |
 | `--no-rekor` | skip the Rekor witness check |

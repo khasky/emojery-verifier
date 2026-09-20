@@ -33,10 +33,10 @@ function paint(text, ...names) {
 // names a terminal that is UTF-8 by construction.
 const UNICODE = process.platform !== "win32" || Boolean(process.env.WT_SESSION || process.env.TERM || process.env.ConEmuANSI);
 const GLYPH = UNICODE
-  ? { pass: "✓", fail: "✗", skip: "○", bar: "█", empty: "░", line: "─", tl: "┌", tr: "┐", bl: "└", br: "┘", v: "│", dot: "·" }
-  : { pass: "+", fail: "x", skip: "-", bar: "#", empty: ".", line: "-", tl: "+", tr: "+", bl: "+", br: "+", v: "|", dot: "-" };
-const TONE = { pass: "green", fail: "red", skip: "yellow" };
-const WORD = { pass: "PASS", fail: "FAIL", skip: "SKIP" };
+  ? { pass: "✓", fail: "✗", skip: "○", note: "•", bar: "█", empty: "░", line: "─", tl: "┌", tr: "┐", bl: "└", br: "┘", v: "│", dot: "·" }
+  : { pass: "+", fail: "x", skip: "-", note: "*", bar: "#", empty: ".", line: "-", tl: "+", tr: "+", bl: "+", br: "+", v: "|", dot: "-" };
+const TONE = { pass: "green", fail: "red", skip: "yellow", note: "yellow" };
+const WORD = { pass: "PASS", fail: "FAIL", skip: "SKIP", note: "NOTE" };
 
 function visibleWidth(text) {
   return text.replace(SGR_RE, "").length;
@@ -51,13 +51,13 @@ function write(text) {
 // so a run that dies mid-section still shows what it had already checked.
 let current = null;
 let printedSection = false;
-const totals = { pass: 0, fail: 0, skip: 0 };
+const totals = { pass: 0, fail: 0, skip: 0, note: 0 };
 const failures = [];
 
 export function section(title) {
   if (jsonMode) return;
   flush();
-  current = { title, lines: [], pass: 0, fail: 0, skip: 0 };
+  current = { title, lines: [], pass: 0, fail: 0, skip: 0, note: 0 };
 }
 
 export function flush() {
@@ -68,6 +68,7 @@ export function flush() {
   const parts = [];
   if (s.pass) parts.push(paint(`${s.pass} ${GLYPH.pass}`, "green"));
   if (s.skip) parts.push(paint(`${s.skip} ${GLYPH.skip}`, "yellow"));
+  if (s.note) parts.push(paint(`${s.note} ${GLYPH.note}`, "yellow"));
   if (s.fail) parts.push(paint(`${s.fail} ${GLYPH.fail}`, "red", "bold"));
   const tally = parts.join(paint(` ${GLYPH.dot} `, "grey"));
   const head = `${GLYPH.line.repeat(2)} ${s.title} `;
@@ -187,6 +188,7 @@ export function verdict({ ok, treeSize, rootHash, keyLabel, witnesses, sources, 
   const tally = [
     paint(`${totals.pass} passed`, "green"),
     totals.skip ? paint(`${totals.skip} skipped`, "yellow") : "",
+    totals.note ? paint(`${totals.note} noted`, "yellow") : "",
     totals.fail ? paint(`${totals.fail} failed`, "red", "bold") : "",
   ]
     .filter(Boolean)

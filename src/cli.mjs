@@ -62,10 +62,12 @@ advanced (another deployment, a policy window, a lighter run):
                             fetched from, instead of the host entries/mirrors.json
                             names. Any copy will do: the manifest's sha256 decides
   --counts-base <url>       host serving the public reaction badges, whose exact
-                            total is compared with the fold. Defaults to the pinned
-                            production API, and ONLY while --pubkey is the pinned log
-                            key too: another deployment serves its own counts, so
-                            there the flag is required and the check skips without it
+                            total is REPORTED against the fold (a disagreement is a
+                            note, not a failure: the fold stops at the audited
+                            checkpoint while the served count is live). Defaults to
+                            the pinned production API, and ONLY while --pubkey is the
+                            pinned log key too: another deployment serves its own
+                            counts, so there the flag is required
   --counts-sample <n>       how many of the largest targets to compare that way
                             (default 10, 0 disables)
   --no-proofs               skip the ENROLL proof check (the one that loads @aztec/bb.js)

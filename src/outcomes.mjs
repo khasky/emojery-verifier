@@ -22,6 +22,14 @@ export function check(ok, msg, key) {
   if (key) record(key, ok ? "pass" : "fail");
 }
 
+// An observation the run reports without deciding on it. Distinct from a check that
+// could not run (skipCheck) and from one that judges (check): the closing tally needs
+// to show it, and a disagreement here must not turn a sound log red.
+export function report(ok, msg, key) {
+  mark(ok ? "pass" : "note", msg);
+  if (key) record(key, ok ? "pass" : "note");
+}
+
 // A check that could not run is its own outcome, never folded into a pass: the
 // closing tally has to say how much of the audit executed.
 export function skipCheck(msg, key) {

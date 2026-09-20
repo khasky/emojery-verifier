@@ -222,17 +222,19 @@ globalThis.fetch = realFetch;
     `the served count is read off the public badge (${urls.join(" ")})`,
   );
 
-  // The point of the whole check: a count the log cannot account for.
+  // A count the log cannot account for is REPORTED, not failed: the fold stops at the
+  // audited checkpoint while the served number is live, so on a busy log the two
+  // legitimately differ by whatever was cast since.
   fresh();
   serve(99);
   await checkServedCounts(entries, { base: "https://api.example.test", sample: 2 });
-  check(checks.served_counts === "fail", `a badge serving more than the log folds to fails (${checks.served_counts})`);
+  check(checks.served_counts === "note", `a badge serving more than the log folds to is noted, not failed (${checks.served_counts})`);
 
   // And a build that publishes no exact total is not silently a match.
   fresh();
   stubFetch(() => ({ body: { schemaVersion: 1, label: "reactions", message: "🔥 3", color: "x", cacheSeconds: 1 } }));
   await checkServedCounts(entries, { base: "https://api.example.test", sample: 1 });
-  check(checks.served_counts === "fail", `a badge with no exact total is not a match (${checks.served_counts})`);
+  check(checks.served_counts === "note", `a badge with no exact total is not counted as a match (${checks.served_counts})`);
 
   fresh();
   await checkServedCounts(entries, { base: "", sample: 2 });

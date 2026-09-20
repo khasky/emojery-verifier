@@ -5,14 +5,23 @@
 // stops there, which proves the log is internally sound and says nothing about what
 // the service serves. The badge is the served number on a public, ungated surface -
 // the same `readCounters` row the extension's own count comes from - so comparing it
-// with the fold closes the one gap a log alone cannot: a count nobody can trace back
-// to a leaf.
+// with the fold is the one look at the gap a log alone cannot close: a count nobody
+// can trace back to a leaf.
+//
+// REPORTED, NOT ENFORCED, and the reason is structural. The fold is of the leaves up
+// to the checkpoint under audit; the served count is live. Every vote cast since that
+// checkpoint is already in the count and not yet in any leaf, so on a busy log the two
+// differ by the unsealed backlog - in either direction, since an un-react lowers the
+// count. Nothing readable from the published files says how large that window is, so
+// there is no threshold here that would be sound rather than arbitrary. What the
+// numbers are still good for is the gross case: a target whose served count the log
+// cannot come close to explaining, which is what an inflated counter looks like.
 //
 // A sample rather than every counter: one request per target, and the targets that
 // matter are the ones carrying most of the count. `--counts-sample 0` turns it off.
 
 import { getJson } from "../http.mjs";
-import { check, skipCheck } from "../outcomes.mjs";
+import { report, skipCheck } from "../outcomes.mjs";
 import { details, phase } from "../report.mjs";
 import { foldCounters } from "../transparency.mjs";
 
@@ -78,5 +87,6 @@ export async function checkServedCounts(entries, { base, sample }) {
   }
   reading.end(read, targets.length);
   details(mismatches, 10);
-  check(mismatches.length === 0, `the served count matches the fold on the ${targets.length} largest target(s) (${mismatches.length} disagreement(s))`, "served_counts");
+  const agreed = targets.length - mismatches.length;
+  report(mismatches.length === 0, `the served count matches the fold on ${agreed} of the ${targets.length} largest target(s)${mismatches.length ? " - a live count runs ahead of the audited checkpoint by whatever was cast since" : ""}`, "served_counts");
 }
