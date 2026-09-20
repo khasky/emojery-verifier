@@ -75,7 +75,16 @@ async function main() {
   }
   const o = parsed.options;
   const pubkey = o.pubkey || PINNED_PUBKEY_B64;
-  const blindPubkey = o.blindPubkey ?? PINNED_BLIND_PUBKEY_SPKI_B64;
+  // The pins are ONE deployment's, and the log key is what names it. Auditing another
+  // deployment (a staging mirror, a fork) with --pubkey therefore takes that
+  // deployment's own values or none: a pin from elsewhere does not fail honestly, it
+  // fails loudly and wrongly - the production blind key over a staging log reports
+  // every KEY leaf as a bad signature, and production audiences report every staging
+  // enrolment as an un-admitted client. Unpassed here, each check says which flag it
+  // is waiting for and skips.
+  const ownDeployment = pubkey === PINNED_PUBKEY_B64;
+  const pinned = (flag, value) => flag ?? (ownDeployment ? value : undefined);
+  const blindPubkey = pinned(o.blindPubkey, PINNED_BLIND_PUBKEY_SPKI_B64);
   configureReport({ json: o.json });
   const startedAt = Date.now();
 
@@ -151,7 +160,7 @@ async function main() {
     await checkRevocationFeed(o.repo, entries, treeSize);
     checkStructure(entries);
     checkWipes(entries, cp, o.wipeGraceHours);
-    await checkServedCounts(entries, { base: o.countsBase ?? (pubkey === PINNED_PUBKEY_B64 ? PINNED_COUNTS_BASE : ""), sample: o.countsSample });
+    await checkServedCounts(entries, { base: pinned(o.countsBase, PINNED_COUNTS_BASE), sample: o.countsSample });
 
     section("Identity");
     await checkIdentityTrack(entries, {
@@ -166,9 +175,9 @@ async function main() {
       blindPubkey,
       proofsDisabled: o.proofsDisabled,
       enrollVkHash: o.enrollVkHash ?? PINNED_ENROLL_VK_SHA256,
-      saltCommitment: o.saltCommitment ?? PINNED_SALT_COMMITMENT,
+      saltCommitment: pinned(o.saltCommitment, PINNED_SALT_COMMITMENT),
       issuers: o.issuers ?? PINNED_ISSUERS,
-      audiences: o.audiences ?? PINNED_AUDIENCES,
+      audiences: pinned(o.audiences, PINNED_AUDIENCES),
       bbVersion: BB_JS_VERSION,
     });
   }
