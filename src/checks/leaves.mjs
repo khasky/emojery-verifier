@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The raw leaves: fetched from the API pages or the log repository's shards, rehashed,
-// folded into the Merkle root and replayed along the published hash chain.
+// The raw leaves: fetched from the chunk bodies the manifest names, rehashed, folded
+// into the Merkle root and replayed along the published hash chain.
 
 import { getBytes, getJson, getText } from "../http.mjs";
 import { check, record, skipCheck } from "../outcomes.mjs";
@@ -20,7 +20,7 @@ export async function manifestBase(repo, override) {
   try {
     mirrors = await getJson(`${repo}/entries/mirrors.json`);
   } catch {
-    throw new Error(`${repo} publishes no entries/mirrors.json - pass --entries-base <url>, or audit this log with --entries repo`);
+    throw new Error(`${repo} publishes no entries/mirrors.json - pass --entries-base <url>, or audit the checkpoints alone with --entries none`);
   }
   const base = mirrors?.base;
   if (typeof base !== "string" || !base) throw new Error(`${repo}/entries/mirrors.json declares no "base" - pass --entries-base <url>`);
