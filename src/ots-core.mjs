@@ -14,7 +14,7 @@
 //                an op item is op||child-timestamp (recursive)
 //   - detached file: HEADER_MAGIC || varuint(1) || 0x08 (sha256) || digest(32) || timestamp
 
-import { bytesToHex as hex, concatBytes, hexToBytes, sha256, utf8 } from "./transparency.mjs";
+import { bytesToHex as hex, concatBytes, hexToBytes, sha256, utf8 } from "./bytes.mjs";
 
 // Op tags.
 const OP_SHA1 = 0x02;
