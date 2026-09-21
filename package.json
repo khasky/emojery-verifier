@@ -62,6 +62,6 @@
   ],
   "scripts": {
     "verify": "node src/verify.mjs",
-    "selftest": "node src/revoke.selftest.mjs && node src/ots.selftest.mjs && node src/archive.selftest.mjs && node src/revocations.selftest.mjs && node src/identity.selftest.mjs"
+    "selftest": "node src/revoke.selftest.mjs && node src/ots.selftest.mjs && node src/archive.selftest.mjs && node src/revocations.selftest.mjs && node src/identity.selftest.mjs && node src/witness.selftest.mjs"
   }
 }

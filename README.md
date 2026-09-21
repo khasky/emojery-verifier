@@ -14,7 +14,8 @@ This tool reads the public log and checks all of that, so the counts are provabl
 - The public revocation list matches the revocations present in the log, and account wipes are complete (a single vote cannot be quietly reversed under an account-deletion label).
 - The identity track holds: every signed vote traces to an epoch key the log registered earlier, every key grant carries the operator's blind signature and the enrolled account's own signature, and every enrollment carries a zero-knowledge proof over a real OpenID provider account.
 - Sigstore Rekor, an independently operated log, holds exactly our signed checkpoint bytes.
-- With `--ots`: the matured OpenTimestamps proof anchors the signed root in a Bitcoin block.
+- With `--ots`: the newest matured OpenTimestamps proof anchors a signed root in a Bitcoin block, and it is no more than two days behind the newest checkpoint.
+- With `--swh`: Software Heritage, an independently operated archive, holds a copy of the log repository taken within the last week, and the copy's head is a commit of the repository.
 
 The checks and their byte-level definitions are in [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
@@ -28,10 +29,10 @@ Verify production:
 node src/verify.mjs --repo https://raw.githubusercontent.com/khasky/emojery-log/main
 ```
 
-Deep Bitcoin audit (slower; passes once the OpenTimestamps proof has matured, hours to days after a checkpoint):
+With the two archival witnesses, the Bitcoin anchor and the Software Heritage copy (slower; a log younger than two days with no matured proof yet reports the Bitcoin check as a skip):
 
 ```
-node src/verify.mjs --ots --repo https://raw.githubusercontent.com/khasky/emojery-log/main
+node src/verify.mjs --ots --swh --repo https://raw.githubusercontent.com/khasky/emojery-log/main
 ```
 
 Machine-readable result on stdout, one JSON object (`result`, `tree_size`, `ts`, `checks`, `duration_sec`; every check is `pass`, `fail` or `skip`):
@@ -104,6 +105,8 @@ The same tool verifies a staging deployment or a fork; the flags below replace t
 | `--max-checkpoint-age-hours <n>` | flag a checkpoint older than this (default 168; 0 disables). A quiet log ages legitimately |
 | `--btc-api <url>` | Esplora-compatible block-header source for `--ots` (default `https://blockstream.info/api`) |
 | `--ots-external <bin>` | also run an external OpenTimestamps client (`ots verify`) on the same proof; a missing or broken binary fails the run, since the cross-check was asked for |
+| `--ots-max-lag-hours <n>` | how far behind the newest checkpoint the newest matured proof may be (default 48). A log younger than this with no proof yet is a skip; an older one, or a proof further behind, is a failure |
+| `--swh-max-age-days <n>` | how old the newest completed Software Heritage visit may be under `--swh` (default 7) |
 | `--blind-pubkey <spki b64>` | the deployment's blind-signing RSA public key |
 | `--enroll-vk-hash <hex>` | SHA-256 of the deployment's `keys/enroll-v1.vk` |
 | `--salt-commitment <hex>` | SHA-256 of the deployment's nullifier salt |
@@ -142,7 +145,7 @@ jobs:
           [ "$(node -p "require('./result.json').result")" = pass ] || exit 1
 ```
 
-A red run means the log did not verify; `result.json` names the check. The job runs without `--ots`, since a young checkpoint has no matured Bitcoin proof yet.
+A red run means the log did not verify; `result.json` names the check. Add `--ots --swh` to hold the two archival witnesses too: an unreachable Esplora or Software Heritage is a skip, so a third party's outage never turns your run red.
 
 ## How it works
 

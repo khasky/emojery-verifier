@@ -16,6 +16,7 @@ import { checkHashChainReplay, checkMerkleRoot, fetchEntries, manifestBase, mani
 import { verifyOts } from "./checks/ots.mjs";
 import { verifyRekor } from "./checks/rekor.mjs";
 import { checkRevocationFeed, checkStructure, checkWipes, reportFold } from "./checks/semantics.mjs";
+import { verifySwh } from "./checks/swh.mjs";
 import { HELP, parseCli, USAGE } from "./cli.mjs";
 import { emptyLog, getJson, githubSlugFromRawBase } from "./http.mjs";
 import { DEFAULT_ISSUERS } from "./identity.mjs";
@@ -149,6 +150,7 @@ async function main() {
 
   section("Independent witness");
   const rekorEntryId = await verifyRekor(o.repo, pubkey, liveCp, archiveBySize, o.rekorDisabled);
+  const swhSnapshot = await verifySwh(o.repo, { enabled: o.swh, maxAgeDays: o.swhMaxAgeDays });
 
   if (leafless) {
     section("Leafless run");
@@ -183,7 +185,7 @@ async function main() {
   }
 
   if (o.ots) section("Bitcoin anchor");
-  const btcBlockHeight = await verifyOts(o.repo, pubkey, { enabled: o.ots, btcApi: o.btcApi, otsExternal: o.otsExternal });
+  const btcBlockHeight = await verifyOts(o.repo, pubkey, liveCp, { enabled: o.ots, btcApi: o.btcApi, otsExternal: o.otsExternal, maxLagHours: o.otsMaxLagHours });
 
   const failed = hasFailed();
   if (o.json) {
@@ -195,7 +197,7 @@ async function main() {
       treeSize: cp.tree_size,
       rootHash: `${cp.root_hash.slice(0, 10)}...${cp.root_hash.slice(-6)}`,
       keyLabel: `${pubkey.slice(0, 10)}... ${pubkey === PINNED_PUBKEY_B64 ? "(pinned in verify.mjs)" : "(--pubkey)"}`,
-      witnesses: [rekorEntryId ? `Rekor ${rekorEntryId.slice(0, 12)}...` : null, btcBlockHeight ? `Bitcoin block ${btcBlockHeight}` : null],
+      witnesses: [rekorEntryId ? `Rekor ${rekorEntryId.slice(0, 12)}...` : null, swhSnapshot ? `SWH snapshot ${swhSnapshot.slice(0, 12)}...` : null, btcBlockHeight ? `Bitcoin block ${btcBlockHeight}` : null],
       sources: [slug ? `${slug.owner}/${slug.repo}@${slug.ref}` : new URL(o.repo).host, { manifest: "manifest + chunk bodies", none: "no leaves read" }[o.entriesMode]],
       elapsedSec: ((Date.now() - startedAt) / 1000).toFixed(1),
       reproduce: `node src/verify.mjs ${process.argv.slice(2).join(" ")}`,

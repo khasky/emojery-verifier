@@ -1,6 +1,8 @@
-// Minimal, dependency-free OpenTimestamps proof handling — deliberately a standalone
-// copy of the operator's codec rather than a shared import, so the verifier depends on
-// nothing of theirs. The two must stay byte-for-byte in lockstep.
+// Minimal, dependency-free OpenTimestamps proof handling: the one implementation of
+// the format in the system. The operator's Worker only submits digests and stores the
+// raw calendar responses; its scheduled upgrade job imports this file from a checkout
+// to grow them into the .ots proofs this verifier then checks. A change here changes
+// both sides at once, which is the point.
 //
 // Wire format (matches python-opentimestamps):
 //   - varuint: LEB128 unsigned (used for lengths and the block height)

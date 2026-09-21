@@ -17,6 +17,8 @@ const VALUE_FLAGS = new Set([
   "--max-checkpoint-age-hours",
   "--btc-api",
   "--ots-external",
+  "--ots-max-lag-hours",
+  "--swh-max-age-days",
   "--blind-pubkey",
   "--enroll-vk-hash",
   "--salt-commitment",
@@ -24,7 +26,15 @@ const VALUE_FLAGS = new Set([
   "--audiences",
   "--keys-per-account",
 ]);
-const BARE_FLAGS = new Set(["--allow-unsigned-votes", "--ots", "--json", "--help", "--no-proofs", "--no-rekor"]);
+const BARE_FLAGS = new Set(["--allow-unsigned-votes", "--ots", "--swh", "--json", "--help", "--no-proofs", "--no-rekor"]);
+
+// Two days: a receipt reaches a block within hours and the operator's upgrade run
+// follows every 6h, so a proof further behind the tip than this means maturation
+// stopped. The same two days drive the operator's own stale alert.
+export const DEFAULT_OTS_MAX_LAG_HOURS = 48;
+// A week: the operator asks Software Heritage for a fresh archive daily, and a
+// week without one is a stopped request or a refused archive, not a slow day.
+export const DEFAULT_SWH_MAX_AGE_DAYS = 7;
 
 export const USAGE = "usage: node src/verify.mjs --repo <raw base> [options]   (--help lists them)";
 
@@ -42,8 +52,12 @@ ${USAGE}
                             key pinned in src/verify.mjs (pass it for staging or a fork)
   --allow-unsigned-votes    admit votes that carry no client signature, which the
                             identity check refuses without it
-  --ots                     deep audit: walk the OpenTimestamps proof to a Bitcoin
-                            block (needs --repo; passes once the proof has matured)
+  --ots                     deep audit: walk the newest matured OpenTimestamps proof
+                            to a Bitcoin block and require it to keep up with the
+                            log (needs --repo; a log younger than --ots-max-lag-hours
+                            with no proof yet is a skip, an older one a failure)
+  --swh                     require a recent Software Heritage archive of the log
+                            repository whose head is a commit of the repository
   --json                    one machine-readable summary on stdout, report on stderr
   --help                    this text
 
@@ -77,6 +91,10 @@ advanced (another deployment, a policy window, a lighter run):
   --btc-api <url>           Esplora-compatible block-header source for --ots
                             (default https://blockstream.info/api)
   --ots-external <bin>      also run an external OpenTimestamps client on the proof
+  --ots-max-lag-hours <n>   how far behind the newest checkpoint the newest matured
+                            proof may be (default ${DEFAULT_OTS_MAX_LAG_HOURS})
+  --swh-max-age-days <n>    how old the newest Software Heritage archive may be
+                            (default ${DEFAULT_SWH_MAX_AGE_DAYS})
   --blind-pubkey <spki b64> the deployment's blind-signing RSA public key
   --enroll-vk-hash <hex>    SHA-256 of the deployment's keys/enroll-v1.vk
   --salt-commitment <hex>   SHA-256 of the deployment's nullifier salt
@@ -135,6 +153,9 @@ export function parseCli(args) {
     ots: args.includes("--ots"),
     btcApi: valueOf(args, "--btc-api"),
     otsExternal: valueOf(args, "--ots-external"),
+    otsMaxLagHours: Number(valueOf(args, "--ots-max-lag-hours") ?? DEFAULT_OTS_MAX_LAG_HOURS),
+    swh: args.includes("--swh"),
+    swhMaxAgeDays: Number(valueOf(args, "--swh-max-age-days") ?? DEFAULT_SWH_MAX_AGE_DAYS),
     json: args.includes("--json"),
     rekorDisabled: args.includes("--no-rekor"),
     proofsDisabled: args.includes("--no-proofs"),
@@ -165,5 +186,7 @@ export function parseCli(args) {
   if (!Number.isInteger(options.countsSample) || options.countsSample < 0) return { error: "--counts-sample needs a non-negative integer (0 = do not read served counts)" };
   if (!Number.isFinite(options.wipeGraceHours) || options.wipeGraceHours < 0) return { error: "--wipe-grace-hours needs a non-negative number" };
   if (options.otsExternal && !options.ots) return { error: "--ots-external requires --ots" };
+  if (!Number.isFinite(options.otsMaxLagHours) || options.otsMaxLagHours < 0) return { error: "--ots-max-lag-hours needs a non-negative number" };
+  if (!Number.isFinite(options.swhMaxAgeDays) || options.swhMaxAgeDays < 0) return { error: "--swh-max-age-days needs a non-negative number" };
   return { options };
 }
