@@ -30,8 +30,13 @@ export async function manifestBase(repo, override) {
 // Named for the first leaf it covers. A chunk holds whatever one publish had, so a
 // file spans no predictable range - but it needs no directory listing either: the
 // first file is leaf 1, and the next one starts at the `to` of its last line.
-function manifestPath(firstLeaf) {
+export function manifestPath(firstLeaf) {
   return `entries/manifest/${padSeq(firstLeaf)}.ndjson`;
+}
+
+// A chunk body, named for the leaf range it holds.
+export function chunkPath(from, to) {
+  return `entries/${padSeq(from)}-${padSeq(to)}.ndjson`;
 }
 
 // The manifest: one line per chunk, {from, to, count, bytes, sha256}, chained across
@@ -93,7 +98,7 @@ export async function fetchEntries(repo, treeSize, base) {
   const from = await manifestBase(repo, base);
   for (const shard of shards) {
     if (Number(shard.from) > treeSize) break;
-    const name = `entries/${padSeq(Number(shard.from))}-${padSeq(Number(shard.to))}.ndjson`;
+    const name = chunkPath(Number(shard.from), Number(shard.to));
     const body = await getBytes(`${from}${name}`);
     // The digest is what makes the body's origin irrelevant - and it fails a
     // truncated download here, rather than as an unexplained root mismatch later.

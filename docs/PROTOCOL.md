@@ -175,7 +175,15 @@ Software Heritage is an independently operated archive of source code. The opera
 
 ## Known-answer tests
 
-`pnpm selftest` replays these vectors, which the backend pins byte for byte on its side:
+`src/__data__/log-vectors.json` is the shared contract between the publisher and this verifier: both replay the same file from their own test suites (`src/vectors.selftest.mjs` here), so a format the two read differently fails a pull request rather than a daily run against a live log. A third implementation should reproduce every value in it:
+
+- `merkle`: eight leaf hashes, the RFC 6962 roots for sizes 0 to 8, three inclusion paths and three consistency proofs, taken from the certificate-transparency-go reference tests.
+- `entries`: one published chunk line per leaf kind (ENROLL, ISSUE, an unsigned vote, KEY, a signed vote, a switch, a remove, a revoke) in `seq` order, each carrying its `leaf_hash` and `entry_hash`, with the keys a leaf does not use absent. Rehashing each line and replaying the chain from genesis must reproduce them; the eight leaves fold to `sth.rootHex`.
+- `sth`: the signed tree head over those leaves, its preimage bytes and its Ed25519 signature under `keypair` (RFC 8032 test vector 1).
+- `paths`: chunk, manifest and enrolment-proof object names for given inputs.
+- `fold`: counter-fold scenarios as published lines with the exact counters they must produce, revocations included.
+
+`pnpm selftest` also replays these, which the backend pins byte for byte on its side:
 
 - revoke leaf `{ seq: 42, ts: 1700000000000, op: 4, revoke_seq: 7, reason_code: "erasure_admin", evidence_hash: 0x00..0x1f }`:
   canonical bytes `000000000000002a0000018bcfe5680004000000066769746875620000000667683a6f2f72ffffffffffffffffffffffff00000000000000070000000d657261737572655f61646d696e00000020000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f`, `leaf_hash` `e927976c582f793b28d02a7371d5492164c67a2c88f863063e2cd9d850812837`. The vector's base carries `site=github` and `target_id=gh:o/r` with the other three strings NULL.
@@ -185,6 +193,7 @@ Software Heritage is an independently operated archive of source code. The opera
 
 Offline, synthetic fixtures, no network, `@aztec/bb.js` never loaded:
 
+- `src/vectors.selftest.mjs`: the shared log vectors above, end to end.
 - `src/revoke.selftest.mjs`: the revoke KAT, the counter fold with revocations (idempotent re-revoke, forward revoke as a no-op, re-credit of a revoked switch), invariants D and E, invariant F (complete wipe, partial wipe after and within grace, un-wiped pseudonyms unchecked, the grace clock, a revoke after the checkpoint, no double report with D).
 - `src/ots.selftest.mjs`: the dependency-free OpenTimestamps parser and Bitcoin verifier, and the external-client driver.
 - `src/archive.selftest.mjs`: prefix roots from one pass equal direct recomputation, a tampered leaf changes the prefix root, the hash chain replays and breaks on a rewritten link, a reorder and a missing `entry_hash`, the checkpoint an offline run picks when the shards trail the tip, and the per-day aggregates derivable from the entries.

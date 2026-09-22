@@ -1,0 +1,224 @@
+{
+  "keypair": {
+    "secretKeyHex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+    "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+  },
+  "merkle": {
+    "leafHashes": [
+      "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+      "07506a85fd9dd2f120eb694f86011e5bb4662e5c415a62917033d4a9624487e7",
+      "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b",
+      "4271a26be0d8a84f0bd54c8c302e7cb3a3b5d1fa6780a40bcce2873477dab658",
+      "b08693ec2e721597130641e8211e7eedccb4c26413963eee6c1e2ed16ffb1a5f",
+      "46f6ffadd3d06a09ff3c5860d2755c8b9819db7df44251788c7d8e3180de8eb1"
+    ],
+    "roots": [
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125",
+      "aeb6bcfe274b70a14fb067a5e5578264db0fa9b51af5e0ba159158f329e06e77",
+      "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7",
+      "4e3bbb1f7b478dcfe71fb631631519a3bca12c9aefca1612bfce4c13a86264d4",
+      "76e67dadbcdf1e10e1b74ddc608abd2f98dfb16fbce75277b5232a127f2087ef",
+      "ddb89be403809e325750d3d263cd78929c2942b7942a34b77e122c9594a74c8c",
+      "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328"
+    ],
+    "inclusion": [
+      {
+        "leafIndex": 0,
+        "treeSize": 8,
+        "path": ["96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7", "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e", "6b47aaf29ee3c2af9af889bc1fb9254dabd31177f16232dd6aab035ca39bf6e4"]
+      },
+      {
+        "leafIndex": 5,
+        "treeSize": 8,
+        "path": ["bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b", "ca854ea128ed050b41b35ffc1b87b8eb2bde461e9e3b5596ece6b9d5975a0ae0", "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7"]
+      },
+      {
+        "leafIndex": 2,
+        "treeSize": 3,
+        "path": ["fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125"]
+      }
+    ],
+    "consistency": [
+      {
+        "first": 3,
+        "second": 7,
+        "proof": ["0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7", "07506a85fd9dd2f120eb694f86011e5bb4662e5c415a62917033d4a9624487e7", "fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125", "837dbb152e9b079010717e84e865da4ebc0fa198a806d59d31bf15accef22d0e"]
+      },
+      {
+        "first": 4,
+        "second": 8,
+        "proof": ["6b47aaf29ee3c2af9af889bc1fb9254dabd31177f16232dd6aab035ca39bf6e4"]
+      },
+      {
+        "first": 6,
+        "second": 8,
+        "proof": ["0ebc5d3437fbe2db158b9f126a1d118e308181031d0a949f8dededebc558ef6a", "ca854ea128ed050b41b35ffc1b87b8eb2bde461e9e3b5596ece6b9d5975a0ae0", "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7"]
+      }
+    ]
+  },
+  "entries": [
+    {
+      "seq": "1",
+      "ts": 1700000040000,
+      "op": 5,
+      "user_ref": "0000000000000000000000000000000000000000000000000000000000000000",
+      "leaf_hash": "1b7e60bf7efa6bddadc0a7c2dcf2f219f9348f8dc4e754bd7948a613177fcebe",
+      "entry_hash": "adf428ff159fb0f80bb7168e5d28ca21078382af328fac2da5ae0a351d36a666",
+      "nullifier": "44815fb9364d5fcfc695b7ca305f3df8d1cd4b15a0a12c76b88e19b6e4f7e1d2",
+      "iss": "https://accounts.google.com",
+      "aud": "emojery-client",
+      "kid": "kid-1",
+      "proof_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "salt_commitment": "ae216c2ef5247a3782c135efa279a3e4cdc61094270f5d2be58c6204b7a612c9",
+      "account_pubkey": "4444444444444444444444444444444444444444444444444444444444444444"
+    },
+    {
+      "seq": "2",
+      "ts": 1700000040000,
+      "op": 6,
+      "user_ref": "0000000000000000000000000000000000000000000000000000000000000000",
+      "leaf_hash": "293f92d0adfe73d1fc1d1a6602b038c75cbcc8b86f4192faa0ac7207de0b513e",
+      "entry_hash": "6ff8ac1197e9552c040bd47976037dd6846045e5eda893d4ff8c4f647086e6a9",
+      "nullifier": "44815fb9364d5fcfc695b7ca305f3df8d1cd4b15a0a12c76b88e19b6e4f7e1d2",
+      "epoch": "1234",
+      "account_pubkey": "4444444444444444444444444444444444444444444444444444444444444444",
+      "account_sig": "66666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666",
+      "blinded_hash": "5555555555555555555555555555555555555555555555555555555555555555"
+    },
+    {
+      "seq": "3",
+      "ts": 1700000040000,
+      "op": 1,
+      "site": "x",
+      "target_id": "p",
+      "reaction": "👍",
+      "user_ref": "abababababababababababababababababababababababababababababababab",
+      "leaf_hash": "f3db1f2777a951a07fe454178fc62e7f5f40f23ac7d2b2270aad904bc9837cff",
+      "entry_hash": "29b4eb5a53a5738f923adb2baa2f243db90785cdd59cebda852cfb3b9a860ae5"
+    },
+    {
+      "seq": "4",
+      "ts": 1700000040000,
+      "op": 7,
+      "user_ref": "0000000000000000000000000000000000000000000000000000000000000000",
+      "leaf_hash": "3567a9a146e73434e5bb898c8b3dbb9236292c8692a78bcc88de196aff355a7d",
+      "entry_hash": "35617457b82173ceed7dbd41194e6348c066ea228243321a0892ea23974ec369",
+      "client_pubkey": "1111111111111111111111111111111111111111111111111111111111111111",
+      "epoch": "1234",
+      "key_sig": "33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333"
+    },
+    {
+      "seq": "5",
+      "ts": 1700000040000,
+      "op": 1,
+      "site": "github",
+      "target_id": "gh:o/r",
+      "reaction": "👍",
+      "user_ref": "02d449a31fbb267c8f352e9968a79e3e5fc95c1bbeaa502fd6454ebde5a4bedc",
+      "leaf_hash": "65bd0426b4e0344ef456e1817b4eb0841fe1eaf25f2176a67033631f7a0edbe4",
+      "entry_hash": "9fdebd4190cc8e0ac8b46d20c85eae2f21c19f73a13b4e27e27fbb0025ac5a68",
+      "client_pubkey": "1111111111111111111111111111111111111111111111111111111111111111",
+      "client_sig": "22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222",
+      "client_nonce": "0123456789abcdef"
+    },
+    {
+      "seq": "6",
+      "ts": 1700000040000,
+      "op": 2,
+      "site": "x",
+      "target_id": "p",
+      "reaction": "❤️",
+      "prev_reaction": "👍",
+      "user_ref": "abababababababababababababababababababababababababababababababab",
+      "leaf_hash": "1a042b8485383675a92c67546d0a57636e9668cd169ba35b03ab9c7f79c9a7e6",
+      "entry_hash": "dee1f329d2855c88e3fa414e9c3c4a3103471f0a410036da6bb1893a1d1b2cdb"
+    },
+    {
+      "seq": "7",
+      "ts": 1700000040000,
+      "op": 3,
+      "site": "x",
+      "target_id": "p",
+      "prev_reaction": "❤️",
+      "user_ref": "abababababababababababababababababababababababababababababababab",
+      "leaf_hash": "49244a8944f7d69427925daac3d06ba041ed387d7dcdf9f437653989d3927429",
+      "entry_hash": "d77d8dfecfd481dda1b95b8e962482f5066d16e5645484a5bc92255612378218"
+    },
+    {
+      "seq": "8",
+      "ts": 1700000100000,
+      "op": 4,
+      "site": "github",
+      "target_id": "gh:o/r",
+      "user_ref": "0000000000000000000000000000000000000000000000000000000000000000",
+      "revoke_seq": "5",
+      "reason_code": "erasure_self",
+      "leaf_hash": "29c2530e217d2000f611449cc954e4325115e64931ed7afd618e25c76db068a1",
+      "entry_hash": "8e2124e8cc1bb6a438748d93bf76361d08f166a2f91996d4fce88cf6d76fa2e9"
+    }
+  ],
+  "sth": {
+    "treeSize": 8,
+    "rootHex": "2e37e7e9756f9af8f648d6879bdc1c3cf1a2279da2e927dd06ac0d7dee4c9ea4",
+    "ts": 1700000160000,
+    "bytesHex": "00000000000000082e37e7e9756f9af8f648d6879bdc1c3cf1a2279da2e927dd06ac0d7dee4c9ea40000018bcfe7d900",
+    "signatureHex": "07ea1a391d88a516340ae8e8609743292d0cf48a357c2bc5258591a352a4738c953433f36b9d911f6888ddef4ea17f78454289514d43263545c63ecb1c19530a"
+  },
+  "paths": {
+    "chunk": [{ "from": 1, "to": 250, "path": "entries/000000000001-000000000250.ndjson" }, { "from": 251, "to": 10250, "path": "entries/000000000251-000000010250.ndjson" }],
+    "manifest": [{ "firstLeaf": 1, "path": "entries/manifest/000000000001.ndjson" }, { "firstLeaf": 1000001, "path": "entries/manifest/000001000001.ndjson" }],
+    "proof": [
+      {
+        "hashHex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "path": "proofs/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.bin"
+      }
+    ]
+  },
+  "fold": [
+    {
+      "name": "add, add, switch, remove, and an unrelated target",
+      "events": [
+        { "seq": 1, "op": 1, "site": "x", "target_id": "p", "reaction": "👍" },
+        { "seq": 2, "op": 1, "site": "x", "target_id": "p", "reaction": "👍" },
+        { "seq": 3, "op": 2, "site": "x", "target_id": "p", "reaction": "❤️", "prev_reaction": "👍" },
+        { "seq": 4, "op": 3, "site": "x", "target_id": "p", "prev_reaction": "👍" },
+        { "seq": 5, "op": 1, "site": "y", "target_id": "q", "reaction": "🎉" }
+      ],
+      "counters": [{ "site": "x", "target_id": "p", "reaction": "👍", "count": 0 }, { "site": "x", "target_id": "p", "reaction": "❤️", "count": 1 }, { "site": "y", "target_id": "q", "reaction": "🎉", "count": 1 }]
+    },
+    {
+      "name": "a remove with no prior add clamps at zero",
+      "events": [{ "seq": 1, "op": 3, "site": "x", "target_id": "p", "prev_reaction": "👍" }],
+      "counters": [{ "site": "x", "target_id": "p", "reaction": "👍", "count": 0 }]
+    },
+    {
+      "name": "a revoke subtracts the add it cites",
+      "events": [{ "seq": 1, "op": 1, "site": "github", "target_id": "gh:o/r", "reaction": "👍" }, { "seq": 2, "op": 4, "site": "github", "target_id": "gh:o/r", "revoke_seq": 1 }],
+      "counters": [{ "site": "github", "target_id": "gh:o/r", "reaction": "👍", "count": 0 }]
+    },
+    {
+      "name": "a second revoke of the same leaf is a no-op",
+      "events": [{ "seq": 1, "op": 1, "site": "github", "target_id": "gh:o/r", "reaction": "👍" }, { "seq": 2, "op": 4, "site": "github", "target_id": "gh:o/r", "revoke_seq": 1 }, { "seq": 3, "op": 4, "site": "github", "target_id": "gh:o/r", "revoke_seq": 1 }],
+      "counters": [{ "site": "github", "target_id": "gh:o/r", "reaction": "👍", "count": 0 }]
+    },
+    {
+      "name": "a revoke citing a later seq is a no-op",
+      "events": [{ "seq": 1, "op": 4, "site": "github", "target_id": "gh:o/r", "revoke_seq": 2 }, { "seq": 2, "op": 1, "site": "github", "target_id": "gh:o/r", "reaction": "👍" }],
+      "counters": [{ "site": "github", "target_id": "gh:o/r", "reaction": "👍", "count": 1 }]
+    },
+    {
+      "name": "identity leaves are not folded and a revoke cannot resolve one",
+      "events": [{ "seq": 1, "op": 1, "site": "github", "target_id": "gh:o/r", "reaction": "👍" }, { "seq": 2, "op": 5 }, { "seq": 3, "op": 6 }, { "seq": 4, "op": 7 }, { "seq": 5, "op": 4, "site": "github", "target_id": "gh:o/r", "revoke_seq": 3 }],
+      "counters": [{ "site": "github", "target_id": "gh:o/r", "reaction": "👍", "count": 1 }]
+    },
+    {
+      "name": "revoking a switch re-credits the previous reaction",
+      "events": [{ "seq": 1, "op": 1, "site": "github", "target_id": "gh:o/r", "reaction": "A" }, { "seq": 2, "op": 2, "site": "github", "target_id": "gh:o/r", "reaction": "B", "prev_reaction": "A" }, { "seq": 3, "op": 4, "site": "github", "target_id": "gh:o/r", "revoke_seq": 2 }],
+      "counters": [{ "site": "github", "target_id": "gh:o/r", "reaction": "A", "count": 1 }, { "site": "github", "target_id": "gh:o/r", "reaction": "B", "count": 0 }]
+    }
+  ]
+}

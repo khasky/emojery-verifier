@@ -61,11 +61,10 @@ const AUD = "emojery-client";
 const PUBKEY = new Uint8Array(32).fill(0x11);
 const SIG = new Uint8Array(64).fill(0x22);
 const KEY_SIG = new Uint8Array(256).fill(0x33);
-const ACCOUNT_PUBKEY = new Uint8Array(32).fill(0x55);
-const BLINDED_HASH = new Uint8Array(32).fill(0x66);
-const ACCOUNT_SIG = new Uint8Array(64).fill(0x77);
-const PROOF = hexToBytes("aabbccdd");
-const PROOF_HASH = await sha256(PROOF);
+const ACCOUNT_PUBKEY = new Uint8Array(32).fill(0x44);
+const BLINDED_HASH = new Uint8Array(32).fill(0x55);
+const ACCOUNT_SIG = new Uint8Array(64).fill(0x66);
+const PROOF_HASH = new Uint8Array(32).fill(0xaa);
 const NONCE = "0123456789abcdef";
 const EPOCH = 1234n;
 const TS = 1700000040000;
@@ -81,9 +80,9 @@ const votes = { seq: 5n, ts: TS, op: 1, site: "github", targetId: "gh:o/r", reac
 check(bytesToHex(await leafHash(votes)) === "65bd0426b4e0344ef456e1817b4eb0841fe1eaf25f2176a67033631f7a0edbe4", "KAT signed vote leaf_hash");
 const nulls = { site: null, targetId: null, reaction: null, prevReaction: null, userRef: null };
 const enroll = { seq: 1n, ts: TS, op: 5, ...nulls, nullifier, iss: ISS, aud: AUD, kid: "kid-1", proofHash: PROOF_HASH, saltCommitment, accountPubkey: ACCOUNT_PUBKEY };
-check(bytesToHex(await leafHash(enroll)) === "aa1493fdf668f6b4fe168de9356433de207756ce26253a43570976c80b3d7e1a", "KAT ENROLL leaf_hash");
+check(bytesToHex(await leafHash(enroll)) === "1b7e60bf7efa6bddadc0a7c2dcf2f219f9348f8dc4e754bd7948a613177fcebe", "KAT ENROLL leaf_hash");
 const issue = { seq: 2n, ts: TS, op: 6, ...nulls, nullifier, epoch: EPOCH, accountPubkey: ACCOUNT_PUBKEY, blindedHash: BLINDED_HASH, accountSig: ACCOUNT_SIG };
-check(bytesToHex(await leafHash(issue)) === "8a083d322d68074c3a23efb598e4736365c9a28db1d18c9350f6d96674ce6250", "KAT ISSUE leaf_hash");
+check(bytesToHex(await leafHash(issue)) === "293f92d0adfe73d1fc1d1a6602b038c75cbcc8b86f4192faa0ac7207de0b513e", "KAT ISSUE leaf_hash");
 const key = { seq: 4n, ts: TS, op: 7, ...nulls, epoch: EPOCH, clientPubkey: PUBKEY, keySig: KEY_SIG };
 check(bytesToHex(await leafHash(key)) === "3567a9a146e73434e5bb898c8b3dbb9236292c8692a78bcc88de196aff355a7d", "KAT KEY leaf_hash");
 check(
@@ -91,13 +90,13 @@ check(
   "KAT voteSignatureMessage bytes",
 );
 check(bytesToHex(epochKeyMessage(EPOCH, PUBKEY)) === `656d6f6a6572792d65706f63682d6b65792d763100000000000004d2${"11".repeat(32)}`, "KAT epochKeyMessage bytes");
-check(bytesToHex(issueMessage(EPOCH, BLINDED_HASH)) === `656d6f6a6572792d69737375652d763100000000000004d2${"66".repeat(32)}`, "KAT issueMessage bytes");
+check(bytesToHex(issueMessage(EPOCH, BLINDED_HASH)) === `656d6f6a6572792d69737375652d763100000000000004d2${"55".repeat(32)}`, "KAT issueMessage bytes");
 
 // The ENROLL tail ends in lpb(account_pubkey32); the ISSUE tail is lpb(account_pubkey32) || lpb(blinded_hash32) || lpb(account_sig64).
 const enrollBytes = bytesToHex(serializeLeaf(enroll));
-check(enrollBytes.endsWith(`00000020${"55".repeat(32)}`) && enrollBytes.length === bytesToHex(serializeLeaf({ ...enroll, accountPubkey: null })).length + 64, "ENROLL bytes end in lpb(account_pubkey)");
+check(enrollBytes.endsWith(`00000020${"44".repeat(32)}`) && enrollBytes.length === bytesToHex(serializeLeaf({ ...enroll, accountPubkey: null })).length + 64, "ENROLL bytes end in lpb(account_pubkey)");
 const issueBytes = bytesToHex(serializeLeaf(issue));
-check(issueBytes.endsWith(`00000020${"55".repeat(32)}00000020${"66".repeat(32)}00000040${"77".repeat(64)}`), "ISSUE bytes end in lpb(account_pubkey) || lpb(blinded_hash) || lpb(account_sig)");
+check(issueBytes.endsWith(`00000020${"44".repeat(32)}00000020${"55".repeat(32)}00000040${"66".repeat(64)}`), "ISSUE bytes end in lpb(account_pubkey) || lpb(blinded_hash) || lpb(account_sig)");
 
 // A vote without a client key keeps the bare 8-field bytes, byte-for-byte.
 const unsigned = { seq: 5n, ts: TS, op: 1, site: "github", targetId: "gh:o/r", reaction: "👍", prevReaction: null, userRef };
@@ -133,7 +132,7 @@ check(checkStructuralInvariants([{ ...rowEnroll, proof_hash: "aa" }]).length ===
 check(checkStructuralInvariants([{ ...rowKey, key_sig: "33".repeat(255) }]).length === 1, "invariant A: KEY with a short key_sig is flagged");
 check(checkStructuralInvariants([{ ...rowIssue, epoch: null }]).length === 1, "invariant A: ISSUE without an epoch is flagged");
 check(checkStructuralInvariants([rowIssueBare]).length === 3, "invariant A: ISSUE missing account_pubkey, blinded_hash and account_sig is flagged three times");
-check(checkStructuralInvariants([{ ...rowIssue, account_sig: "77".repeat(63) }]).length === 1, "invariant A: ISSUE with a short account_sig is flagged");
+check(checkStructuralInvariants([{ ...rowIssue, account_sig: "66".repeat(63) }]).length === 1, "invariant A: ISSUE with a short account_sig is flagged");
 check(checkStructuralInvariants([{ ...rowVote, client_sig: null }]).length === 1, "invariant A: a vote with a pubkey but no signature is flagged");
 check(checkStructuralInvariants([{ ...rowVote, op: 8 }]).length === 1, "invariant A: op=8 stays unexpected");
 
@@ -241,7 +240,7 @@ const audStart = issStart + ISS_MAX + 1;
 check(inputs[audStart] === fieldHex(0x65) && inputs[audStart + AUD_MAX] === fieldHex(AUD.length), "public inputs: aud bytes padded to 128, then its length");
 const nulStart = audStart + AUD_MAX + 1;
 check(inputs[nulStart] === fieldHex(0x44) && inputs[nulStart + 31] === fieldHex(0xd2) && inputs[nulStart + 32] === fieldHex(0xae) && inputs[nulStart + 63] === fieldHex(0xc9), "public inputs: nullifier then salt_commitment, one byte per field");
-check(inputs.slice(nulStart + 64).every((f) => f === fieldHex(0x55)) && inputs.length - (nulStart + 64) === 32, "public inputs: account_pubkey is the last 32 fields");
+check(inputs.slice(nulStart + 64).every((f) => f === fieldHex(0x44)) && inputs.length - (nulStart + 64) === 32, "public inputs: account_pubkey is the last 32 fields");
 let threw = false;
 try {
   enrollPublicInputs({ modulus, iss: "x".repeat(97), aud: AUD, nullifierHex: nullifier, saltCommitmentHex: bytesToHex(saltCommitment), accountPubkeyHex: AK1 });
