@@ -104,36 +104,67 @@ function realProviders(apiBase) {
   ];
 }
 
+/** @param {Provider[]} list @returns {readonly Readonly<Provider>[]} */
+function freezeAll(list) {
+  return Object.freeze(list.map((p) => Object.freeze(p)));
+}
+
+// The two tables are separate, side-effect-free bindings so that a bundle naming only one of
+// them drops the other: a production extension build must not carry the staging host.
+
+/** The production sign-in providers. */
+export const PRODUCTION_PROVIDERS = /* @__PURE__ */ freezeAll(/* @__PURE__ */ realProviders("https://api.emojery.app"));
+
+/** @returns {Provider[]} */
+function stagingProviders() {
+  return [
+    ...realProviders("https://api-staging.emojery.app"),
+    {
+      id: "test",
+      iss: "https://api-staging.emojery.app/test-oidc",
+      jwksUri: "https://api-staging.emojery.app/test-oidc/.well-known/jwks.json",
+      clientId: "emojery-staging-test",
+      authorize: "https://api-staging.emojery.app/test-oidc/authorize",
+      responseType: "id_token",
+      responseMode: "fragment",
+      scope: "openid",
+    },
+  ];
+}
+
+/** The staging sign-in providers: the real ones against the staging API, plus its test issuer. */
+export const STAGING_PROVIDERS = /* @__PURE__ */ freezeAll(/* @__PURE__ */ stagingProviders());
+
 /**
- * The sign-in providers per deployment, fixed in code: a change is a release. Staging adds
- * its test issuer. The Worker checks `iss` and `aud` against this table, the client builds
- * its sign-in list from it, the verifier pins the same values.
+ * The sign-in providers per deployment, fixed in code: a change is a release. The Worker
+ * checks `iss` and `aud` against this table, the client builds its sign-in list from it, the
+ * verifier pins the same values. A bundle for one deployment imports that deployment's table
+ * instead, so the other one stays out of it.
  */
-export const PROVIDERS = Object.freeze({
-  production: Object.freeze(realProviders("https://api.emojery.app").map((p) => Object.freeze(p))),
-  staging: Object.freeze(
-    [
-      ...realProviders("https://api-staging.emojery.app"),
-      {
-        id: "test",
-        iss: "https://api-staging.emojery.app/test-oidc",
-        jwksUri: "https://api-staging.emojery.app/test-oidc/.well-known/jwks.json",
-        clientId: "emojery-staging-test",
-        authorize: "https://api-staging.emojery.app/test-oidc/authorize",
-        responseType: "id_token",
-        responseMode: "fragment",
-        scope: "openid",
-      },
-    ].map((p) => Object.freeze(p)),
-  ),
-});
+export const PROVIDERS = /* @__PURE__ */ Object.freeze({ production: PRODUCTION_PROVIDERS, staging: STAGING_PROVIDERS });
+
+/**
+ * The providers of a table a client offers: those with a client id.
+ * @param {readonly Provider[]} table
+ */
+export function offeredIn(table) {
+  return table.filter((p) => p.clientId !== "");
+}
+
+/**
+ * The provider of a table an id_token names by its exact `iss` and `aud`, or null.
+ * @param {readonly Provider[]} table @param {string} iss @param {string} aud
+ */
+export function providerIn(table, iss, aud) {
+  return table.find((p) => p.iss === iss && p.clientId !== "" && p.clientId === aud) ?? null;
+}
 
 /**
  * The providers a client offers: those with a client id.
  * @param {"production" | "staging"} deployment
  */
 export function offeredProviders(deployment) {
-  return PROVIDERS[deployment].filter((p) => p.clientId !== "");
+  return offeredIn(PROVIDERS[deployment]);
 }
 
 /**
@@ -141,5 +172,5 @@ export function offeredProviders(deployment) {
  * @param {"production" | "staging"} deployment @param {string} iss @param {string} aud
  */
 export function providerByToken(deployment, iss, aud) {
-  return PROVIDERS[deployment].find((p) => p.iss === iss && p.clientId !== "" && p.clientId === aud) ?? null;
+  return providerIn(PROVIDERS[deployment], iss, aud);
 }
