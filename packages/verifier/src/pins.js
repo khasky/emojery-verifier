@@ -49,7 +49,7 @@ export const LOGS = Object.freeze({
       { ...GOOGLE, aud: [] },
       { ...MICROSOFT, aud: [] },
       { ...APPLE, aud: [] },
-      { id: "test", iss: "https://api-staging.emojery.app/test-oidc", aud: [], jwksUri: "https://api-staging.emojery.app/test-oidc/.well-known/jwks.json" },
+      { id: "test", iss: "https://api-staging.emojery.app/test-oidc", aud: ["emojery-staging-test"], jwksUri: "https://api-staging.emojery.app/test-oidc/.well-known/jwks.json" },
     ],
     mirror: "https://raw.githubusercontent.com/khasky/emojery-tlog-staging/main",
     bucket: "https://log-staging.emojery.app",
