@@ -3,6 +3,8 @@
 // from a file the operator publishes: a pin changes only with a release of this
 // verifier, which the reader installs on purpose.
 
+import { PROVIDERS } from "@emojery/shared/api";
+
 /**
  * @typedef {object} Provider
  * @property {string} id
@@ -33,24 +35,26 @@ export const REKOR_SHARDS = Object.freeze([
   { origin: "log2025-1.rekor.sigstore.dev", publicKey: "t8rlp1knGwjfbcXAYPYAkn0XiLz1x8O4t0YkEhie244=", from: "2025-09-23", until: null },
 ]);
 
-const GOOGLE = { id: "google", iss: "https://accounts.google.com", jwksUri: "https://www.googleapis.com/oauth2/v3/certs" };
-// The personal-account tenant only; a work or school account has another issuer.
-const MICROSOFT = { id: "microsoft", iss: "https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0", jwksUri: "https://login.microsoftonline.com/consumers/discovery/v2.0/keys" };
-const APPLE = { id: "apple", iss: "https://appleid.apple.com", jwksUri: "https://appleid.apple.com/auth/keys" };
+/**
+ * The provider table the extension signs in with and the Worker checks against
+ * (@emojery/shared/api), as pins: one client id per provider, none for a provider the
+ * deployment does not offer. One table, so a client id cannot be accepted by one side and
+ * refused by the other.
+ * @param {"production" | "staging"} deployment
+ * @returns {Provider[]}
+ */
+function providerPins(deployment) {
+  return PROVIDERS[deployment].map((p) => ({ id: p.id, iss: p.iss, aud: p.clientId ? [p.clientId] : [], jwksUri: p.jwksUri }));
+}
 
 /** @type {Readonly<Record<string, LogPins>>} */
 export const LOGS = Object.freeze({
-  // Client ids and the salt commitment are filled in when the staging providers exist.
+  // The salt commitment is pinned from the staging seed's first ENROLL.
   "log-staging.emojery.app": {
     logKeys: [{ publicKey: "P37N5YTTgfbn4L1oW4lLnQM7BsHQEYgY4QpnkYLNEaM=", fromSize: 0 }],
     enroll: { 2: { vkSha256: "ba44c95ba2fef66e7eff5b15590a9d5f55dae324239873180384f7d7a5a4321a" } },
     saltCommitment: "",
-    providers: [
-      { ...GOOGLE, aud: [] },
-      { ...MICROSOFT, aud: [] },
-      { ...APPLE, aud: [] },
-      { id: "test", iss: "https://api-staging.emojery.app/test-oidc", aud: ["emojery-staging-test"], jwksUri: "https://api-staging.emojery.app/test-oidc/.well-known/jwks.json" },
-    ],
+    providers: providerPins("staging"),
     mirror: "https://raw.githubusercontent.com/khasky/emojery-tlog-staging/main",
     bucket: "https://log-staging.emojery.app",
     api: "https://api-staging.emojery.app",
