@@ -114,3 +114,12 @@ test("hashes and signed messages", async () => {
   assert.equal(toHex(refreshMessage("log.emojery.app", 1790604800n).subarray(-8)), "000000006aba7600");
   assert.throws(() => reactMessage({ origin: "o", enrollHash: new Uint8Array(31), site: "s", targetId: "t", reaction: "", prevReaction: "", counter: 1 }), RangeError);
 });
+
+test("an ENROLL with a small-order device key is refused, in any spelling", async () => {
+  const { isSmallOrderKey } = await import("../src/core/leaf.js");
+  for (const hex of ["0000000000000000000000000000000000000000000000000000000000000080", "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85", "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "0100000000000000000000000000000000000000000000000000000000000000"]) {
+    assert.ok(isSmallOrderKey(fromHex(hex)), hex);
+    assert.throws(() => encodeLeaf({ ...enroll, accountPubkey: fromHex(hex) }), LeafError);
+  }
+  assert.ok(!isSmallOrderKey(new Uint8Array(32).fill(3)));
+});

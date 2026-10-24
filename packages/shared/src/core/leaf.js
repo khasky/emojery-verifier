@@ -16,6 +16,28 @@ export class LeafError extends Error {
 const SITE = /^[a-z0-9]{1,32}$/;
 const REASON_CODE = /^[a-z_]{1,32}$/;
 
+// Ed25519 points of small order, with the sign bit cleared: the eight torsion points and
+// the two non-canonical spellings of y = 0 and y = 1. A device key among them would let
+// one signature verify under one implementation and fail under another.
+const SMALL_ORDER = [
+  "0000000000000000000000000000000000000000000000000000000000000000",
+  "0100000000000000000000000000000000000000000000000000000000000000",
+  "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+  "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+  "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+  "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+  "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+];
+
+/** True for an encoding of a small-order Ed25519 point. @param {Uint8Array} key 32 bytes */
+export function isSmallOrderKey(key) {
+  const masked = Uint8Array.from(key);
+  masked[31] &= 0x7f;
+  let hex = "";
+  for (const x of masked) hex += x.toString(16).padStart(2, "0");
+  return SMALL_ORDER.includes(hex);
+}
+
 /** @param {boolean} ok @param {string} why */
 function check(ok, why) {
   if (!ok) throw new LeafError(why);
@@ -71,6 +93,7 @@ export function checkShape(leaf) {
       }
       fixed(leaf.modulusHash, 32, "modulus_hash");
       fixed(leaf.accountPubkey, 32, "account_pubkey");
+      check(!isSmallOrderKey(leaf.accountPubkey), "account_pubkey is a small-order point");
       fixed(leaf.proofHash, 32, "proof_hash");
       return;
     case OP.RETIRE:
