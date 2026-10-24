@@ -66,3 +66,80 @@ export function parseBadgePath(path) {
   if (!m || !isValidTargetId(m[1], m[2])) return null;
   return { site: m[1], targetId: m[2], ext: /** @type {"svg" | "json"} */ (m[3]) };
 }
+
+/**
+ * @typedef {object} Provider
+ * @property {string} id
+ * @property {string} iss exact issuer, one form
+ * @property {string} jwksUri
+ * @property {string} clientId the `aud` of its id_tokens; an empty one is not offered
+ * @property {string} authorize authorization endpoint the client opens
+ * @property {string} responseType
+ * @property {string} [responseMode]
+ * @property {string} [scope] absent: no scope parameter is sent
+ * @property {string} [redirectUri] a registered web page that forwards the fragment
+ */
+
+const GOOGLE_CLIENT_ID = "368200727057-40v0prpc56gpqiv6oiu3rval6su4jbuf.apps.googleusercontent.com";
+// The personal-account registration is created before genesis; until then Microsoft is not offered.
+const MICROSOFT_CLIENT_ID = "";
+const APPLE_SERVICES_ID = "app.emojery.web";
+
+/** @param {string} apiBase @returns {Provider[]} */
+function realProviders(apiBase) {
+  return [
+    { id: "google", iss: "https://accounts.google.com", jwksUri: "https://www.googleapis.com/oauth2/v3/certs", clientId: GOOGLE_CLIENT_ID, authorize: "https://accounts.google.com/o/oauth2/v2/auth", responseType: "id_token", scope: "openid" },
+    {
+      id: "microsoft",
+      // The personal-account tenant only; a work or school account has another issuer.
+      iss: "https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0",
+      jwksUri: "https://login.microsoftonline.com/consumers/discovery/v2.0/keys",
+      clientId: MICROSOFT_CLIENT_ID,
+      authorize: "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize",
+      responseType: "id_token",
+      responseMode: "fragment",
+      scope: "openid",
+    },
+    { id: "apple", iss: "https://appleid.apple.com", jwksUri: "https://appleid.apple.com/auth/keys", clientId: APPLE_SERVICES_ID, authorize: "https://appleid.apple.com/auth/authorize", responseType: "code id_token", responseMode: "fragment", redirectUri: `${apiBase}/v2/auth/apple/return` },
+  ];
+}
+
+/**
+ * The sign-in providers per deployment, fixed in code: a change is a release. Staging adds
+ * its test issuer. The Worker checks `iss` and `aud` against this table, the client builds
+ * its sign-in list from it, the verifier pins the same values.
+ */
+export const PROVIDERS = Object.freeze({
+  production: Object.freeze(realProviders("https://api.emojery.app").map((p) => Object.freeze(p))),
+  staging: Object.freeze(
+    [
+      ...realProviders("https://api-staging.emojery.app"),
+      {
+        id: "test",
+        iss: "https://api-staging.emojery.app/test-oidc",
+        jwksUri: "https://api-staging.emojery.app/test-oidc/.well-known/jwks.json",
+        clientId: "emojery-staging-test",
+        authorize: "https://api-staging.emojery.app/test-oidc/authorize",
+        responseType: "id_token",
+        responseMode: "fragment",
+        scope: "openid",
+      },
+    ].map((p) => Object.freeze(p)),
+  ),
+});
+
+/**
+ * The providers a client offers: those with a client id.
+ * @param {"production" | "staging"} deployment
+ */
+export function offeredProviders(deployment) {
+  return PROVIDERS[deployment].filter((p) => p.clientId !== "");
+}
+
+/**
+ * The provider an id_token names by its exact `iss` and `aud`, or null.
+ * @param {"production" | "staging"} deployment @param {string} iss @param {string} aud
+ */
+export function providerByToken(deployment, iss, aud) {
+  return PROVIDERS[deployment].find((p) => p.iss === iss && p.clientId !== "" && p.clientId === aud) ?? null;
+}
