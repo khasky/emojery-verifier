@@ -4,3 +4,4 @@ export * from "./leaf.js";
 export * from "./messages.js";
 export * from "./tree.js";
 export * from "./tiles.js";
+export * from "./note.js";
