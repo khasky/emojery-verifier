@@ -1,0 +1,600 @@
+{
+ "//": "Target-id vectors: every derive entry must yield targetId; every noTarget entry must yield nothing; valid and invalid pin the id patterns. Shared by the publisher, the extension and the site.",
+ "derive": [
+  {
+   "site": "x",
+   "url": "https://x.com/Pirat_Nation/status/2058156237737295928",
+   "targetId": "2058156237737295928"
+  },
+  {
+   "site": "x",
+   "url": "https://x.com/Pirat_Nation/status/2058156237737295928/photo/1",
+   "targetId": "2058156237737295928"
+  },
+  {
+   "site": "x",
+   "url": "https://x.com/Pirat_Nation/status/2058156237737295928/analytics",
+   "targetId": "2058156237737295928"
+  },
+  {
+   "site": "youtube",
+   "url": "https://www.youtube.com/watch?v=Pjb7tRmjwag",
+   "targetId": "Pjb7tRmjwag"
+  },
+  {
+   "site": "youtube",
+   "url": "https://youtube.com/shorts/Pjb7tRmjwag?feature=share",
+   "targetId": "Pjb7tRmjwag"
+  },
+  {
+   "site": "youtube",
+   "url": "https://m.youtube.com/watch?v=Pjb7tRmjwag",
+   "targetId": "Pjb7tRmjwag"
+  },
+  {
+   "site": "reddit",
+   "url": "https://www.reddit.com/r/coolgithubprojects/comments/1tezfl7/open_source_palantir_on_git/",
+   "targetId": "t3_1tezfl7"
+  },
+  {
+   "site": "reddit",
+   "url": "https://www.reddit.com/gallery/1tezfl7",
+   "targetId": "t3_1tezfl7"
+  },
+  {
+   "site": "instagram",
+   "url": "https://www.instagram.com/p/DYUhRl8OWQU/",
+   "targetId": "DYUhRl8OWQU"
+  },
+  {
+   "site": "instagram",
+   "url": "https://instagram.com/p/DYUhRl8OWQU/?utm_source=ig_web_copy_link",
+   "targetId": "DYUhRl8OWQU"
+  },
+  {
+   "site": "instagram",
+   "url": "https://www.instagram.com/ikkywatari/p/DYUhRl8OWQU/",
+   "targetId": "DYUhRl8OWQU"
+  },
+  {
+   "site": "instagram",
+   "url": "https://www.instagram.com/reel/CzOsYYsu9jP/",
+   "targetId": "CzOsYYsu9jP"
+  },
+  {
+   "site": "instagram",
+   "url": "https://www.instagram.com/reels/CzOsYYsu9jP/",
+   "targetId": "CzOsYYsu9jP"
+  },
+  {
+   "site": "threads",
+   "url": "https://www.threads.com/@theromero/post/DYpmDeHjE1L",
+   "targetId": "DYpmDeHjE1L"
+  },
+  {
+   "site": "github",
+   "url": "https://github.com/facebook/react",
+   "targetId": "facebook/react"
+  },
+  {
+   "site": "amazon",
+   "url": "https://www.amazon.com/dp/B00ZV9RDKK",
+   "targetId": "B00ZV9RDKK"
+  },
+  {
+   "site": "amazon",
+   "url": "https://www.amazon.co.uk/gp/product/B00ZV9RDKK",
+   "targetId": "B00ZV9RDKK"
+  },
+  {
+   "site": "rottentomatoes",
+   "url": "https://www.rottentomatoes.com/m/the_odyssey_2026",
+   "targetId": "m/the_odyssey_2026"
+  },
+  {
+   "site": "rottentomatoes",
+   "url": "https://www.rottentomatoes.com/m/The_Odyssey_2026",
+   "targetId": "m/the_odyssey_2026"
+  },
+  {
+   "site": "rottentomatoes",
+   "url": "https://www.rottentomatoes.com/m/the_odyssey_2026/",
+   "targetId": "m/the_odyssey_2026"
+  },
+  {
+   "site": "rottentomatoes",
+   "url": "https://www.rottentomatoes.com/m/the_odyssey_2026?cmp=RT_Home",
+   "targetId": "m/the_odyssey_2026"
+  },
+  {
+   "site": "rottentomatoes",
+   "url": "https://www.rottentomatoes.com/tv/trespasses",
+   "targetId": "tv/trespasses"
+  },
+  {
+   "site": "rottentomatoes",
+   "url": "https://www.rottentomatoes.com/tv/trespasses/s01",
+   "targetId": "tv/trespasses/s01"
+  },
+  {
+   "site": "rottentomatoes",
+   "url": "https://www.rottentomatoes.com/tv/Trespasses/S01",
+   "targetId": "tv/trespasses/s01"
+  },
+  {
+   "site": "rottentomatoes",
+   "url": "https://www.rottentomatoes.com/tv/trespasses/s01/",
+   "targetId": "tv/trespasses/s01"
+  },
+  {
+   "site": "rottentomatoes",
+   "url": "https://www.rottentomatoes.com/tv/trespasses/s01/e02",
+   "targetId": "tv/trespasses/s01/e02"
+  },
+  {
+   "site": "tmdb",
+   "url": "https://www.themoviedb.org/movie/238-the-godfather",
+   "targetId": "movie/238"
+  },
+  {
+   "site": "tmdb",
+   "url": "https://www.themoviedb.org/movie/238",
+   "targetId": "movie/238"
+  },
+  {
+   "site": "tmdb",
+   "url": "https://www.themoviedb.org/movie/238-a-completely-different-slug",
+   "targetId": "movie/238"
+  },
+  {
+   "site": "tmdb",
+   "url": "https://www.themoviedb.org/movie/238-the-godfather/",
+   "targetId": "movie/238"
+  },
+  {
+   "site": "tmdb",
+   "url": "https://www.themoviedb.org/movie/238?language=en-US",
+   "targetId": "movie/238"
+  },
+  {
+   "site": "tmdb",
+   "url": "https://www.themoviedb.org/tv/275102",
+   "targetId": "tv/275102"
+  },
+  {
+   "site": "tmdb",
+   "url": "https://www.themoviedb.org/collection/531241-spider-man-mcu-collection",
+   "targetId": "collection/531241"
+  },
+  {
+   "site": "imdb",
+   "url": "https://www.imdb.com/title/tt33764258/",
+   "targetId": "tt33764258"
+  },
+  {
+   "site": "imdb",
+   "url": "https://www.imdb.com/title/tt33764258",
+   "targetId": "tt33764258"
+  },
+  {
+   "site": "imdb",
+   "url": "https://www.imdb.com/title/TT33764258/",
+   "targetId": "tt33764258"
+  },
+  {
+   "site": "imdb",
+   "url": "https://www.imdb.com/title/tt33764258/?ref_=fn_al_tt_1",
+   "targetId": "tt33764258"
+  },
+  {
+   "site": "imdb",
+   "url": "https://www.imdb.com/title/tt0959621/",
+   "targetId": "tt0959621"
+  },
+  {
+   "site": "metacritic",
+   "url": "https://www.metacritic.com/movie/resident-evil-2026/",
+   "targetId": "movie/resident-evil-2026"
+  },
+  {
+   "site": "metacritic",
+   "url": "https://www.metacritic.com/movie/resident-evil-2026",
+   "targetId": "movie/resident-evil-2026"
+  },
+  {
+   "site": "metacritic",
+   "url": "https://www.metacritic.com/movie/resident-evil-2026/?utm_source=x",
+   "targetId": "movie/resident-evil-2026"
+  },
+  {
+   "site": "metacritic",
+   "url": "https://www.metacritic.com/tv/breaking-bad/season-5/",
+   "targetId": "tv/breaking-bad/season-5"
+  },
+  {
+   "site": "metacritic",
+   "url": "https://www.metacritic.com/game/valheim/",
+   "targetId": "game/valheim"
+  },
+  {
+   "site": "opencritic",
+   "url": "https://opencritic.com/game/12090/elden-ring",
+   "targetId": "12090"
+  },
+  {
+   "site": "opencritic",
+   "url": "https://opencritic.com/game/12090/elden-ring/",
+   "targetId": "12090"
+  },
+  {
+   "site": "opencritic",
+   "url": "https://opencritic.com/game/12090/elden-ring?utm_source=x",
+   "targetId": "12090"
+  },
+  {
+   "site": "opencritic",
+   "url": "https://opencritic.com/game/12090/a-completely-wrong-slug",
+   "targetId": "12090"
+  },
+  {
+   "site": "opencritic",
+   "url": "https://opencritic.com/game/12090/Elden-Ring",
+   "targetId": "12090"
+  },
+  {
+   "site": "github",
+   "url": "https://github.com/Khasky/Emojery",
+   "targetId": "khasky/emojery"
+  },
+  {
+   "site": "github",
+   "url": "https://github.com/khasky/data.json",
+   "targetId": "khasky/data.json"
+  },
+  {
+   "site": "x",
+   "url": "https://x.com/a/status/1234567890123456789",
+   "targetId": "1234567890123456789"
+  },
+  {
+   "site": "reddit",
+   "url": "https://www.reddit.com/r/x/comments/AbC12/title/c0mment/",
+   "targetId": "t3_abc12"
+  },
+  {
+   "site": "reddit",
+   "url": "https://redd.it/abc12",
+   "targetId": "t3_abc12"
+  }
+ ],
+ "noTarget": [
+  {
+   "site": "x",
+   "url": "https://x.com/Pirat_Nation"
+  },
+  {
+   "site": "instagram",
+   "url": "https://www.instagram.com/reels/audio/123456/"
+  },
+  {
+   "site": "github",
+   "url": "https://github.com/facebook/react/issues"
+  },
+  {
+   "site": "github",
+   "url": "https://github.com/settings/profile"
+  },
+  {
+   "site": "amazon",
+   "url": "https://evil.example/dp/B00ZV9RDKK"
+  },
+  {
+   "site": "rottentomatoes",
+   "url": "https://www.rottentomatoes.com/m/the_odyssey_2026/reviews"
+  },
+  {
+   "site": "rottentomatoes",
+   "url": "https://www.rottentomatoes.com/browse/movies_at_home"
+  },
+  {
+   "site": "rottentomatoes",
+   "url": "https://evil.example/m/the_odyssey_2026"
+  },
+  {
+   "site": "rottentomatoes",
+   "url": "https://www.rottentomatoes.com/celebrity/tom_holland"
+  },
+  {
+   "site": "rottentomatoes",
+   "url": "https://www.rottentomatoes.com/tv/trespasses/s01/cast-and-crew"
+  },
+  {
+   "site": "tmdb",
+   "url": "https://www.themoviedb.org/movie/238-the-godfather/cast"
+  },
+  {
+   "site": "tmdb",
+   "url": "https://www.themoviedb.org/person/1136406-tom-holland"
+  },
+  {
+   "site": "tmdb",
+   "url": "https://evil.example/movie/238"
+  },
+  {
+   "site": "tmdb",
+   "url": "https://www.themoviedb.org/tv/275102/season/1"
+  },
+  {
+   "site": "tmdb",
+   "url": "https://www.themoviedb.org/tv/275102/season/1/episode/1"
+  },
+  {
+   "site": "tmdb",
+   "url": "https://www.themoviedb.org/list/1-the-marvel-universe"
+  },
+  {
+   "site": "imdb",
+   "url": "https://www.imdb.com/title/tt33764258/fullcredits/"
+  },
+  {
+   "site": "imdb",
+   "url": "https://www.imdb.com/name/nm1297015/"
+  },
+  {
+   "site": "imdb",
+   "url": "https://evil.example/title/tt33764258/"
+  },
+  {
+   "site": "imdb",
+   "url": "https://www.imdb.com/title/tt0903747/episodes/"
+  },
+  {
+   "site": "imdb",
+   "url": "https://www.imdb.com/list/ls000004717/"
+  },
+  {
+   "site": "metacritic",
+   "url": "https://www.metacritic.com/movie/resident-evil-2026/critic-reviews/"
+  },
+  {
+   "site": "metacritic",
+   "url": "https://www.metacritic.com/movie/Resident-Evil-2026/"
+  },
+  {
+   "site": "metacritic",
+   "url": "https://www.metacritic.com/browse/movie/"
+  },
+  {
+   "site": "metacritic",
+   "url": "https://evil.example/movie/resident-evil-2026/"
+  },
+  {
+   "site": "metacritic",
+   "url": "https://www.metacritic.com/person/milla-jovovich/"
+  },
+  {
+   "site": "metacritic",
+   "url": "https://www.metacritic.com/music/random-access-memories/daft-punk/"
+  },
+  {
+   "site": "opencritic",
+   "url": "https://opencritic.com/game/12090"
+  },
+  {
+   "site": "opencritic",
+   "url": "https://opencritic.com/game/12090/elden-ring/reviews"
+  },
+  {
+   "site": "opencritic",
+   "url": "https://opencritic.com/outlet/56/ign"
+  },
+  {
+   "site": "opencritic",
+   "url": "https://opencritic.com/browse/all"
+  },
+  {
+   "site": "opencritic",
+   "url": "https://evil.example/game/12090/elden-ring"
+  },
+  {
+   "site": "github",
+   "url": "https://github.com/khasky/.."
+  },
+  {
+   "site": "github",
+   "url": "https://github.com/khasky%2Femojery"
+  },
+  {
+   "site": "github",
+   "url": "https://github.com/khаsky/emojery"
+  },
+  {
+   "site": "github",
+   "url": "https://github.com/khasky/emoj‮ery"
+  },
+  {
+   "site": "github",
+   "url": "http://github.com/khasky/emojery"
+  },
+  {
+   "site": "x",
+   "url": "https://x.com/a/status/0123"
+  },
+  {
+   "site": "x",
+   "url": "https://x.com/a/status/12345678901234567890"
+  },
+  {
+   "site": "x",
+   "url": "https://x.com.evil.com/a/status/123"
+  },
+  {
+   "site": "x",
+   "url": "https://x.com/a/status/%EF%BC%91%EF%BC%92"
+  },
+  {
+   "site": "tmdb",
+   "url": "https://www.themoviedb.org/movie/0238"
+  },
+  {
+   "site": "imdb",
+   "url": "https://www.imdb.com/title/tt959621/"
+  },
+  {
+   "site": "rottentomatoes",
+   "url": "https://www.rottentomatoes.com/m/.."
+  },
+  {
+   "site": "nosuchsite",
+   "url": "https://example.com/1"
+  },
+  {
+   "site": "gitlab",
+   "url": "https://gitlab.com/group/project"
+  },
+  {
+   "site": "facebook",
+   "url": "https://www.facebook.com/zuck/posts/1234567890"
+  }
+ ],
+ "valid": [
+  {
+   "site": "github",
+   "targetId": "khasky/emojery"
+  },
+  {
+   "site": "github",
+   "targetId": "a/.x"
+  },
+  {
+   "site": "x",
+   "targetId": "1"
+  },
+  {
+   "site": "x",
+   "targetId": "9223372036854775807"
+  },
+  {
+   "site": "reddit",
+   "targetId": "t3_abc12"
+  },
+  {
+   "site": "gitlab",
+   "targetId": "123"
+  },
+  {
+   "site": "gitlab",
+   "targetId": "group/sub/project"
+  },
+  {
+   "site": "facebook",
+   "targetId": "1234567"
+  },
+  {
+   "site": "facebook",
+   "targetId": "pfbid0NNsMEQqj7ydjUq38s8i2CrNkL6qSwZA3fzvqFbFhrQ223PpicZjdCcNjZhpf83Qol"
+  },
+  {
+   "site": "facebook",
+   "targetId": "photo:1234567"
+  },
+  {
+   "site": "facebook",
+   "targetId": "url:aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  {
+   "site": "imdb",
+   "targetId": "tt0959621"
+  }
+ ],
+ "invalid": [
+  {
+   "site": "github",
+   "targetId": "Khasky/Emojery"
+  },
+  {
+   "site": "github",
+   "targetId": "khasky/.."
+  },
+  {
+   "site": "github",
+   "targetId": "khasky/."
+  },
+  {
+   "site": "github",
+   "targetId": "khаsky/emojery"
+  },
+  {
+   "site": "github",
+   "targetId": "khasky/emoj‮ery"
+  },
+  {
+   "site": "github",
+   "targetId": "-khasky/emojery"
+  },
+  {
+   "site": "github",
+   "targetId": "khasky"
+  },
+  {
+   "site": "x",
+   "targetId": ""
+  },
+  {
+   "site": "x",
+   "targetId": "0123"
+  },
+  {
+   "site": "x",
+   "targetId": "12345678901234567890"
+  },
+  {
+   "site": "x",
+   "targetId": "１２３"
+  },
+  {
+   "site": "reddit",
+   "targetId": "t3_abc/some_title"
+  },
+  {
+   "site": "reddit",
+   "targetId": "t3_ABC"
+  },
+  {
+   "site": "gitlab",
+   "targetId": "0123"
+  },
+  {
+   "site": "gitlab",
+   "targetId": "group/../x"
+  },
+  {
+   "site": "gitlab",
+   "targetId": "single"
+  },
+  {
+   "site": "facebook",
+   "targetId": "video:1234567"
+  },
+  {
+   "site": "facebook",
+   "targetId": "url:aaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  {
+   "site": "facebook",
+   "targetId": "0123456"
+  },
+  {
+   "site": "imdb",
+   "targetId": "tt959621"
+  },
+  {
+   "site": "tmdb",
+   "targetId": "movie/0238"
+  },
+  {
+   "site": "nosuchsite",
+   "targetId": "1"
+  }
+ ]
+}

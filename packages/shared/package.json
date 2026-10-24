@@ -16,7 +16,10 @@
   "type": "module",
   "sideEffects": false,
   "exports": {
-    "./core": "./src/core/index.js"
+    "./core": "./src/core/index.js",
+    "./sites": "./src/sites/index.js",
+    "./palette": "./src/palette/index.js",
+    "./api": "./src/api/index.js"
   },
   "files": [
     "src",
