@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // npx @emojery/verifier [--full | --leaf <seq> | --target <site>/<id>...] [options]
 
+import { writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
-import { fromBase64Url, fromHex } from "@emojery/shared/core";
+import { fromBase64, fromBase64Url, fromHex } from "@emojery/shared/core";
 import { countsPath } from "@emojery/shared/api";
 import { fastCheck } from "./fast.js";
 import { fullCheck } from "./full.js";
+import { localHost, recordRun, snapshotJwks } from "./mirror.js";
 import { pinsFor } from "./pins.js";
 import { Report } from "./report.js";
 import { leafCheck, targetCheck } from "./single.js";
@@ -32,6 +34,11 @@ Options:
   --api <url>                ask another counts API (--target)
   --json                     print the verdict as JSON
 
+Keeping a mirror repository (the quick check, or --full):
+  --update-mirror <dir>      check against the checkout in <dir>, then add the new anchors,
+                             the providers' new keys, index.json on PASS and a verdict line
+  --message-file <path>      where to write the commit message for that change
+
 Exit code: 0 PASS, 1 FAIL, 3 WAIT, 2 usage.`;
 
 /** @param {string} s */
@@ -56,6 +63,8 @@ async function main() {
         mirror: { type: "string" },
         api: { type: "string" },
         json: { type: "boolean" },
+        "update-mirror": { type: "string" },
+        "message-file": { type: "string" },
         help: { type: "boolean", short: "h" },
       },
     }).values;
@@ -68,7 +77,8 @@ async function main() {
     return 0;
   }
   const modes = [args.full, args.leaf !== undefined, args.target !== undefined].filter(Boolean).length;
-  if (modes > 1) {
+  const mirrorDir = args["update-mirror"];
+  if (modes > 1 || (mirrorDir && (args.leaf !== undefined || args.target !== undefined))) {
     console.error(`one mode at a time\n\n${USAGE}`);
     return 2;
   }
@@ -79,7 +89,7 @@ async function main() {
     logName: args.log,
     pins,
     bucket: host(args.bucket ?? pins.bucket, { log }),
-    mirror: host(args.mirror ?? pins.mirror, { log }),
+    mirror: mirrorDir ? localHost(mirrorDir) : host(args.mirror ?? pins.mirror, { log }),
     report,
     now: Math.floor(Date.now() / 1000),
     checkProofs: !args["no-proofs"],
@@ -118,10 +128,17 @@ async function main() {
     );
   } else {
     const file = await loadState(args.state);
+    const jwksAdded = mirrorDir ? await snapshotJwks(mirrorDir, pins.providers, ctx.getJson, (s) => report.note(s)) : [];
     const next = await (args.full ? fullCheck : fastCheck)(ctx, file.logs[args.log]);
     if (next) {
       file.logs[args.log] = next;
       await saveState(args.state, file);
+    }
+    if (mirrorDir) {
+      const key = fromBase64(pins.logKeys[pins.logKeys.length - 1]?.publicKey ?? "");
+      const r = await recordRun({ dir: mirrorDir, bucket: ctx.bucket, logName: args.log, logKey: key, report, state: file.logs[args.log], jwksAdded, now: new Date() });
+      if (args["message-file"]) await writeFile(args["message-file"], `${r.message}
+`);
     }
   }
   console.log(args.json ? JSON.stringify(report.toJSON({ log: args.log })) : report.toText({ log: args.log }));
