@@ -166,3 +166,75 @@ test("a rewind that understates M fails", async () => {
   assert.match(report.failures.join("\n"), /M = 550/);
 });
 
+
+test("a broken anchor chain fails", async () => {
+  const p = await honest();
+  const first = await run(p);
+  await p.seal(junk(10, 300));
+  await p.publish();
+  await p.anchor(NOW - 20);
+  await p.seal(junk(10, 310));
+  await p.publish();
+  await p.anchor(NOW - 10);
+  p.syncMirror();
+  p.bucket.delete("g0/anchors/310.json");
+  p.mirror.delete("g0/anchors/310.json");
+  const { report } = await run(p, first.state);
+  assert.equal(report.verdict, "FAIL", report.toText());
+  assert.match(report.failures.join("\n"), /chain is broken/);
+});
+
+test("an anchor in a shard this verifier does not pin does not count", async () => {
+  const p = await honest();
+  const report = new Report();
+  const state = await fastCheck({ logName: p.logName, pins: p.pins, bucket: p.host("bucket"), mirror: p.host("mirror"), report, now: NOW, shards: [] }, undefined);
+  assert.equal(state, undefined);
+  assert.match(report.info.join("\n"), /does not pin/);
+  assert.notEqual(report.verdict, "FAIL");
+});
+
+test("an unreadable mirror, or one far behind, is a WAIT", async () => {
+  const p = await honest();
+  const report = new Report();
+  await fastCheck({ logName: p.logName, pins: p.pins, bucket: p.host("bucket"), mirror: { get: async () => ({ ok: false, missing: false, status: 503 }) }, report, now: NOW, shards: [p.shard.pin] }, undefined);
+  assert.equal(report.verdict, "WAIT", report.toText());
+  await p.seal(junk(10, 300));
+  await p.publish();
+  await p.anchor(NOW + 5 * 1800);
+  const behind = await run(p, undefined, NOW + 5 * 1800);
+  assert.equal(behind.report.verdict, "WAIT", behind.report.toText());
+});
+
+test("a rewind hidden from the bucket's index.json fails", async () => {
+  const p = await honest(600);
+  await p.rewind(512, "database incident");
+  await p.seal(junk(20, 1000));
+  await p.publish();
+  await p.anchor(NOW);
+  p.syncMirror();
+  p.bucket.set("index.json", utf8(JSON.stringify({ records: [] })));
+  const { report } = await run(p);
+  assert.equal(report.verdict, "FAIL", report.toText());
+  assert.match(report.failures.join("\n"), /hidden/);
+});
+
+test("a rewind that rewrites the shared prefix fails", async () => {
+  const p = await honest(600);
+  // The new generation forks at 512 but starts from a different leaf 100.
+  await p.rewind(512, "database incident");
+  p.leaves[100] = encodeLeaf({ op: OP.REVOKE, enrollSeq: 1n, reasonCode: "rewritten", caseId: new Uint8Array(16), banUntil: 3 });
+  p.hashes[100] = await (await import("@emojery/shared/core")).leafHash(p.leaves[100]);
+  // ...and the record claims the rewritten root at N.
+  p.records.pop();
+  const rec = { origin: `${p.logName}/g1`, forkedFrom: `${p.logName}/g0`, at: 1790000000000, n: 512, rootN: await p.root(512), m: 600, rootM: new Uint8Array(32), reason: "database incident" };
+  const { rewindText } = await import("@emojery/shared/core");
+  const { sign } = await import("./helpers/publisher.js");
+  p.records.push({ kind: "rewind", note: await sign(rewindText(rec), p.logName, p.key.sk, p.key.pk) });
+  p.bucket.set("index.json", utf8(JSON.stringify({ records: p.records })));
+  await p.seal(junk(5, 1000));
+  await p.publish();
+  await p.anchor(NOW);
+  p.syncMirror();
+  const { report } = await run(p);
+  assert.equal(report.verdict, "FAIL", report.toText());
+});

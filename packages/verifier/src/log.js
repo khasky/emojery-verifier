@@ -69,21 +69,34 @@ export function prefixFor(gens, last) {
 }
 
 /**
- * Reads a tile or bundle of the current generation's tree: the full object, or the
- * partial one of exactly `width`, falling back from full to partial at the right edge.
+ * Reads a tile or bundle of `width` entries. A full object is read as itself; a partial
+ * one as `.p/<width>`, and when the publisher has already replaced that with the full
+ * object (§6), as the full object's first `width` entries.
  * @param {{ get: (path: string) => Promise<import("./source.js").ReadResult> }} bucket
  * @param {Generation[]} gens
  * @param {"hash" | "entries"} kind @param {number} level @param {number} index @param {number} width
  */
 export async function readTile(bucket, gens, kind, level, index, width) {
   const leavesPerEntry = 2 ** (8 * level);
-  const last = (index * TILE_WIDTH + width) * leavesPerEntry - 1;
-  const prefix = prefixFor(gens, last);
-  const path = (w) => `${prefix}/${kind === "entries" ? entriesPath(index, w) : hashTilePath(level, index, w)}`;
-  const full = width === TILE_WIDTH ? await bucket.get(path(TILE_WIDTH)) : null;
-  if (full?.ok) return { ...full, path: path(TILE_WIDTH) };
-  const partial = width === TILE_WIDTH ? full : await bucket.get(path(width));
-  return { ...partial, path: path(width) };
+  const at = (/** @type {number} */ w) => `${prefixFor(gens, (index * TILE_WIDTH + w) * leavesPerEntry - 1)}/${kind === "entries" ? entriesPath(index, w) : hashTilePath(level, index, w)}`;
+  const exact = at(width);
+  const r = await bucket.get(exact);
+  if (r.ok || width === TILE_WIDTH || !r.missing) return { ...r, path: exact };
+  const fullPath = at(TILE_WIDTH);
+  const full = await bucket.get(fullPath);
+  if (!full.ok) return { ...r, path: exact };
+  const bytes = kind === "hash" ? full.bytes.subarray(0, 32 * width) : bundlePrefix(full.bytes, width);
+  return { ok: /** @type {const} */ (true), bytes, headers: full.headers, path: fullPath };
+}
+
+/** The bytes of the first `n` records of an entry bundle. @param {Uint8Array} b @param {number} n */
+function bundlePrefix(b, n) {
+  let o = 0;
+  for (let i = 0; i < n; i++) {
+    if (o + 2 > b.length) return b;
+    o += 2 + ((b[o] << 8) | b[o + 1]);
+  }
+  return b.subarray(0, o);
 }
 
 /** @param {import("./source.js").ReadResult & { ok: true }} r @param {number} width */

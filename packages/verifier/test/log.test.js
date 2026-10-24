@@ -72,3 +72,14 @@ test("tiles: the full object first, a partial at the right edge, under the right
   assert.equal(gone.missing, true);
   assert.deepEqual(asked, ["g0/tile/entries/000", "g1/tile/entries/001.p/3", "g1/tile/0/002"]);
 });
+
+test("a partial the publisher replaced is read from the full object", async () => {
+  const g = await generations(null, LOG, pub);
+  const leaves = Array.from({ length: 256 }, (_, i) => new Uint8Array([i, i]));
+  const bucket = {
+    get: async (p) => (p === "g0/tile/entries/000" ? { ok: true, bytes: encodeEntryBundle(leaves), headers: new Headers() } : { ok: false, missing: true, status: 404 }),
+  };
+  const r = await readTile(bucket, g, "entries", 0, 0, 5);
+  assert.equal(r.ok, true);
+  assert.deepEqual(entries(r, 5), leaves.slice(0, 5));
+});

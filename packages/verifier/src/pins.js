@@ -23,6 +23,7 @@
  * @property {readonly Provider[]} providers
  * @property {string} mirror raw base URL of the log's mirror repository
  * @property {string} bucket base URL of the log's files
+ * @property {string} api base URL of the counts API
  * @property {number} anchorIntervalS
  */
 
@@ -52,6 +53,7 @@ export const LOGS = Object.freeze({
     ],
     mirror: "https://raw.githubusercontent.com/khasky/emojery-tlog-staging/main",
     bucket: "https://log-staging.emojery.app",
+    api: "https://api-staging.emojery.app",
     anchorIntervalS: 1800,
   },
 });

@@ -16,7 +16,9 @@ export class AnchorError extends Error {
 
 /**
  * @typedef {object} Anchor
- * @property {"ok" | "unknown-kind"} status
+ * @property {"ok" | "unknown-kind" | "future" | "unpinned"} status "ok" only for an anchor
+ *   that counts; "future" and "unpinned" hold everything else that was checked
+ * @property {number | null} [prev] size of the previous anchor of the generation
  * @property {string} [note]
  * @property {{ origin: string, size: number, root: Uint8Array }} [checkpoint]
  * @property {number} [anchoredAt]
@@ -39,9 +41,10 @@ async function note(text, name, key, what) {
 }
 
 /**
- * Checks one anchor file. Throws AnchorError on any contradiction; returns
- * `{ status: "unknown-kind" }` for a kind this verifier does not know (a WAIT, never a
- * failure).
+ * Checks one anchor file. Throws AnchorError on any contradiction. An anchor that
+ * cannot count without being wrong - a kind this verifier does not know, an anchoredAt
+ * ahead of the clock, a shard it does not pin - comes back with that status: no anchor,
+ * never a failure.
  * @param {string} text the file
  * @param {{ logName: string, logKey: Uint8Array, shards: readonly { origin: string, publicKey: string }[], now?: number }} ctx
  * @returns {Promise<Anchor>}
@@ -60,7 +63,8 @@ export async function checkAnchor(text, ctx) {
   const checkpoint = await note(a.note, ctx.logName, ctx.logKey, "log checkpoint");
   must(Number.isSafeInteger(a.anchoredAt) && a.anchoredAt > 0, "anchoredAt is not a positive integer");
   const now = ctx.now ?? Math.floor(Date.now() / 1000);
-  must(a.anchoredAt <= now + CLOCK_SKEW_S, "anchoredAt is in the future");
+  const future = a.anchoredAt > now + CLOCK_SKEW_S;
+  must(a.prev === undefined || (Number.isSafeInteger(a.prev) && a.prev > 0 && a.prev < checkpoint.size), "prev is not a size below this anchor's");
 
   const r = a.rekor;
   must(r && typeof r.origin === "string" && typeof r.anchorSig === "string" && typeof r.entry === "string", "anchor has no Rekor entry");
@@ -93,25 +97,29 @@ export async function checkAnchor(text, ctx) {
     must(shardCheckpoint.origin === shard.origin, "shard checkpoint names another origin");
     const index = Number(p.logIndex);
     must(Number.isSafeInteger(index) && String(index) === String(p.logIndex), "inclusion proof index is not an integer");
+    must(Number(r.logIndex) === index, "rekor.logIndex differs from the inclusion proof's");
     try {
       await verifyInclusion(index, shardCheckpoint.size, await leafHash(entryBytes), p.hashes.map(fromBase64), shardCheckpoint.root);
     } catch (e) {
       throw new AnchorError(`entry is not in the shard: ${/** @type {Error} */ (e).message}`);
     }
   }
-  return { status: "ok", note: a.note, checkpoint, anchoredAt: a.anchoredAt, shard: r.origin, shardPinned: Boolean(shard) };
+  const status = future ? "future" : shard ? "ok" : "unpinned";
+  return { status, note: a.note, checkpoint, anchoredAt: a.anchoredAt, prev: a.prev ?? null, shard: r.origin, shardPinned: Boolean(shard) };
 }
 
 /**
  * The anchor file a publisher writes from a Rekor v2 TransparencyLogEntry.
  * @param {string} note @param {number} anchoredAt @param {string} shard @param {string} anchorSig @param {any} tle
+ * @param {number | null} [prev] size of the previous anchor of the generation
  */
-export function anchorFile(note, anchoredAt, shard, anchorSig, tle) {
+export function anchorFile(note, anchoredAt, shard, anchorSig, tle, prev = null) {
   const p = tle.inclusionProof;
   return JSON.stringify({
     kind: ANCHOR_KIND,
     note,
     anchoredAt,
+    ...(prev ? { prev } : {}),
     rekor: { origin: shard, logIndex: Number(tle.logIndex), anchorSig, entry: tle.canonicalizedBody, inclusionProof: { logIndex: p.logIndex, treeSize: p.treeSize, rootHash: p.rootHash, hashes: p.hashes, checkpoint: p.checkpoint.envelope } },
   });
 }

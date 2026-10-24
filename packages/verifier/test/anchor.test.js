@@ -28,6 +28,8 @@ test("an unknown kind waits, an unpinned shard is reported", async () => {
   assert.deepEqual(await checkAnchor(mutate((a) => (a.kind = "sigsum-v1")), ctx), { status: "unknown-kind" });
   const a = await checkAnchor(file, { ...ctx, shards: [] });
   assert.equal(a.shardPinned, false);
+  assert.equal(a.status, "unpinned");
+  assert.equal((await checkAnchor(mutate((x) => (x.anchoredAt = ctx.now + 3600)), ctx)).status, "future");
 });
 
 test("every contradiction fails", async () => {
@@ -37,7 +39,8 @@ test("every contradiction fails", async () => {
     "anchorSig of another message": mutate((a) => (a.rekor.anchorSig = otherSig)),
     "entry from another anchor": mutate((a) => (a.rekor.entry = Buffer.from(Buffer.from(a.rekor.entry, "base64").toString().replace("SHA2_512", "SHA2_256")).toString("base64"))),
     "inclusion index moved": mutate((a) => (a.rekor.inclusionProof.logIndex = String(Number(a.rekor.inclusionProof.logIndex) - 1))),
-    "anchoredAt in the future": mutate((a) => (a.anchoredAt = ctx.now + 3600)),
+    "rekor.logIndex differs from the proof": mutate((a) => (a.rekor.logIndex += 1)),
+    "prev not below the size": mutate((a) => (a.prev = 5)),
     "anchoredAt missing": mutate((a) => delete a.anchoredAt),
   };
   for (const [why, text] of Object.entries(cases)) await assert.rejects(checkAnchor(text, ctx), AnchorError, why);

@@ -67,6 +67,8 @@ export class Publisher {
     this.records = [];
     /** Leaves below this were written under an older generation's prefix. */
     this.prefixes = [{ generation: 0, start: 0 }];
+    /** Size of the newest anchor of the current generation. */
+    this.lastAnchor = null;
   }
 
   get origin() {
@@ -74,7 +76,7 @@ export class Publisher {
   }
 
   get pins() {
-    return { logKeys: [{ publicKey: toBase64(this.key.pk), fromSize: 0 }], enroll: {}, saltCommitment: "", providers: [], mirror: "", bucket: "", anchorIntervalS: 1800 };
+    return { logKeys: [{ publicKey: toBase64(this.key.pk), fromSize: 0 }], enroll: {}, saltCommitment: "", providers: [], mirror: "", bucket: "", api: "", anchorIntervalS: 1800 };
   }
 
   /** @param {Uint8Array[]} leaves */
@@ -98,10 +100,12 @@ export class Publisher {
       const slice = this.leaves.slice(b * TILE_WIDTH, (b + 1) * TILE_WIDTH);
       const p = this.prefixOf(b * TILE_WIDTH + slice.length - 1);
       this.bucket.set(`${p}/${entriesPath(b, slice.length)}`, encodeEntryBundle(slice));
+      if (slice.length === TILE_WIDTH) for (const k of [...this.bucket.keys()]) if (k.startsWith(`${p}/${entriesPath(b)}.p/`)) this.bucket.delete(k);
     }
     for (const t of await buildHashTiles(this.hashes)) {
       const last = (t.index * TILE_WIDTH + t.width) * 2 ** (8 * t.level) - 1;
       this.bucket.set(`${this.prefixOf(last)}/${hashTilePath(t.level, t.index, t.width)}`, t.bytes);
+      if (t.width === TILE_WIDTH) for (const k of [...this.bucket.keys()]) if (k.startsWith(`${this.prefixOf(last)}/${hashTilePath(t.level, t.index)}.p/`)) this.bucket.delete(k);
     }
     this.bucket.set(`g${this.generation}/checkpoint`, utf8(await this.checkpointNote()));
   }
@@ -119,7 +123,8 @@ export class Publisher {
     const note = await this.checkpointNote();
     const anchorSig = ed25519ph.sign(utf8(note), this.key.sk);
     const tle = await this.shard.add(note, anchorSig, this.key.pk);
-    const file = anchorFile(note, anchoredAt, this.shard.origin, toBase64(anchorSig), tle);
+    const file = anchorFile(note, anchoredAt, this.shard.origin, toBase64(anchorSig), tle, this.lastAnchor);
+    this.lastAnchor = this.leaves.length;
     const g = `g${this.generation}`;
     this.bucket.set(`${g}/anchors/${this.leaves.length}.json`, utf8(file));
     this.bucket.set(`${g}/anchors/latest.json`, utf8(file));
@@ -141,6 +146,7 @@ export class Publisher {
     this.records.push({ kind: "rewind", note: await sign(rewindText(rec), this.logName, this.key.sk, this.key.pk) });
     this.bucket.set("index.json", utf8(JSON.stringify({ records: this.records })));
     this.generation++;
+    this.lastAnchor = null;
     this.prefixes.push({ generation: this.generation, start: n });
     this.leaves.length = n;
     this.hashes.length = n;
