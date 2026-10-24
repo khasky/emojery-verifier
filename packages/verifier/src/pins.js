@@ -40,9 +40,9 @@ const APPLE = { id: "apple", iss: "https://appleid.apple.com", jwksUri: "https:/
 
 /** @type {Readonly<Record<string, LogPins>>} */
 export const LOGS = Object.freeze({
-  // Filled in when the staging log's key and client ids exist (overhaul plan, M2-M3).
+  // Client ids and the salt commitment are filled in when the staging providers exist.
   "log-staging.emojery.app": {
-    logKeys: [],
+    logKeys: [{ publicKey: "P37N5YTTgfbn4L1oW4lLnQM7BsHQEYgY4QpnkYLNEaM=", fromSize: 0 }],
     enroll: { 2: { vkSha256: "ba44c95ba2fef66e7eff5b15590a9d5f55dae324239873180384f7d7a5a4321a" } },
     saltCommitment: "",
     providers: [
