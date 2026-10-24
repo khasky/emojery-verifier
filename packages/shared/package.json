@@ -1,0 +1,31 @@
+{
+  "name": "@emojery/shared",
+  "version": "1.0.0",
+  "description": "The Emojery log format, signed messages and site rules, shared by the verifier, the extension and the publisher",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Khasky",
+    "url": "https://github.com/khasky"
+  },
+  "homepage": "https://emojery.app",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/khasky/emojery-verifier.git",
+    "directory": "packages/shared"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./core": "./src/core/index.js"
+  },
+  "files": [
+    "src",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}
