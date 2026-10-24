@@ -4,7 +4,14 @@
 // here from the leaf, the provider key and the pinned salt commitment - nothing inside
 // the proof is trusted - and the provider key itself.
 
+import { readFile } from "node:fs/promises";
 import { equalBytes, fromBase64Url, sha256, toBase64Url, toHex, utf8 } from "@emojery/shared/core";
+
+const KEYS = new URL("../keys/", import.meta.url);
+// The structured reference string a proof check needs: the first G1 point (uncompressed,
+// 64 bytes) and the G2 point (128 bytes) of Aztec's BN254 ceremony, as its CDN serves them.
+export const CRS_G1_SHA256 = "d6ba9329f8932c12192b37849f772104d20048f76434a3290512d9d814e4116f";
+export const CRS_G2_SHA256 = "01797bfc4de5a96f0e516a9ea4537d18786dc30cb991aca4274c95822b69c32f";
 
 export const RSA_BITS = 2048;
 const LIMB_BITS = 120n;
@@ -87,13 +94,37 @@ export async function checkJwkFile(text, want) {
 }
 
 /**
- * A proof checker over @aztec/bb.js with verifier target evm. Loaded lazily, so a run
- * that checks no proofs never loads the WASM.
+ * The verification key of an ENROLL version, from this package, checked against its pin.
+ * @param {number} version @param {string} vkSha256
+ */
+export async function verificationKey(version, vkSha256) {
+  const vk = new Uint8Array(await readFile(new URL(`enroll-v${version}.vk`, KEYS)));
+  if (toHex(await sha256(vk)) !== vkSha256) throw new Error(`the packaged verification key of ENROLL v${version} does not match its pin`);
+  return vk;
+}
+
+/**
+ * The two points of the structured reference string an UltraHonk check needs, from this
+ * package and checked against their pins: no download, nothing written to disk.
+ */
+export async function crsPoints() {
+  const g1 = new Uint8Array(await readFile(new URL("bn254_g1.dat", KEYS)));
+  const g2 = new Uint8Array(await readFile(new URL("bn254_g2.dat", KEYS)));
+  if (toHex(await sha256(g1)) !== CRS_G1_SHA256 || toHex(await sha256(g2)) !== CRS_G2_SHA256) throw new Error("the packaged CRS points do not match their pins");
+  return { g1, g2 };
+}
+
+/**
+ * A proof checker over @aztec/bb.js with verifier target evm, on the WASM backend on
+ * every platform and with the reference string set from the packaged points. Loaded
+ * lazily, so a run that checks no proofs never loads the WASM.
  * @param {Uint8Array} vk
  */
 export async function proofChecker(vk) {
+  const { g1, g2 } = await crsPoints();
   const bb = await import("@aztec/bb.js");
-  const api = await bb.Barretenberg.new({ threads: 1 });
+  const api = await bb.Barretenberg.new({ backend: bb.BackendType.Wasm, threads: 1, skipSrsInit: true });
+  await api.srsInitSrs({ pointsBuf: g1, numPoints: 1, g2Point: g2 });
   const backend = new bb.UltraHonkVerifierBackend(api);
   return {
     /** @param {Uint8Array} proof @param {string[]} publicInputs */
