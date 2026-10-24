@@ -1,0 +1,32 @@
+{
+  "name": "@emojery/verifier",
+  "version": "1.0.0",
+  "description": "Verify the Emojery transparency log: signatures, proofs, tiles, anchors and the counts",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Khasky",
+    "url": "https://github.com/khasky"
+  },
+  "homepage": "https://emojery.app",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/khasky/emojery-verifier.git",
+    "directory": "packages/verifier"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "src",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "@aztec/bb.js": "5.2.1",
+    "@emojery/shared": "workspace:*",
+    "@noble/curves": "2.4.0"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}
