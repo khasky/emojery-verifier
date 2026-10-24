@@ -49,11 +49,10 @@ function providerPins(deployment) {
 
 /** @type {Readonly<Record<string, LogPins>>} */
 export const LOGS = Object.freeze({
-  // The salt commitment is pinned from the staging seed's first ENROLL.
   "log-staging.emojery.app": {
     logKeys: [{ publicKey: "P37N5YTTgfbn4L1oW4lLnQM7BsHQEYgY4QpnkYLNEaM=", fromSize: 0 }],
     enroll: { 2: { vkSha256: "ba44c95ba2fef66e7eff5b15590a9d5f55dae324239873180384f7d7a5a4321a" } },
-    saltCommitment: "",
+    saltCommitment: "7d68320622d41287d5c9fa0cf5352c0057112c9c5ebf15479356801f69aa46d1",
     providers: providerPins("staging"),
     mirror: "https://raw.githubusercontent.com/khasky/emojery-tlog-staging/main",
     bucket: "https://log-staging.emojery.app",
