@@ -1,0 +1,40 @@
+{
+ "logName": "log-staging.emojery.app",
+ "logPublicKey": "XxiMuNuAc+gcdU+XZGq3TC7rCFliL42G+UHu5Yy7Wes=",
+ "note": "log-staging.emojery.app/g0\n1\nAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=\n\n— log-staging.emojery.app iskyhvvmrwHNqDgZMk2HB+IIK68tNbZoG7/06W65X+w2HZIF/vPNVeGoWNZERjlxO/Got3T79anNPlHNBQiRY+LhYQA=\n",
+ "anchorSig": "XxoX7pZqrrUJQgLPnAPo0ajT0KomfzyzDyVfFwBaovH4My9nNSAYv1wr2QpKPuHs0dNwFRhvFAC6347o83+yBA==",
+ "response": {
+  "logIndex": "6205056",
+  "logId": {
+   "keyId": "09OnDKEw7/hpZiYVPoTRzRbglHk0sylsUovegnRUlJY="
+  },
+  "kindVersion": {
+   "kind": "hashedrekord",
+   "version": "0.0.2"
+  },
+  "integratedTime": "0",
+  "inclusionPromise": null,
+  "inclusionProof": {
+   "logIndex": "6205056",
+   "rootHash": "KtHXdOkz7T/4vxJNPFrVW14Y3k4uW5eB9ZXp3+YFxiU=",
+   "treeSize": "6205057",
+   "hashes": [
+    "MozTNAkZbyyxASkfqt8rBqoyiq4IHDJm+Zh2SKPKlpQ=",
+    "FeKp8ivgA+RWtN+ekzpfoduvyJb8QIVBgPLQb8Y6FAM=",
+    "VubTl+2JtVNRgRUSQE0+oXSRWV9lZL6htd+XBo/KV18=",
+    "eZ8Ke2O/Don5d/lLUGaawEqoaQqW2vj2fVVtLfbJTk4=",
+    "/X4J7VC0SpG+OoJiXPdR+eAj5FI2V8oFVTJ1ZTn1E18=",
+    "H+FUcfVkuq5xPuqPcBNLWx6hMaJPab12eDQ1C+8D9ns=",
+    "ojXLR9ewkbvyKVVHAiaV7TIvlPjhO9oJtLXZhm1Qgzc=",
+    "R7dnTOCUO/x6ap8YN5GPI1jMT8MAhgyMmEAa/xJvaIU=",
+    "WoyMwtQHdqYSXsO6im2BaauZA2LZ82YdMl7ONpvNSO8=",
+    "wUh3BzJHyxf3fnc2drZgmE5CL2eAq8XsJuolI6t6hhM=",
+    "8P+h1Yu1gcrsKBKWdhQt3jFhsyGrA3qlMlnezzSub28="
+   ],
+   "checkpoint": {
+    "envelope": "log2025-alpha3.rekor.sigstage.dev\n6205057\nKtHXdOkz7T/4vxJNPFrVW14Y3k4uW5eB9ZXp3+YFxiU=\n\n— log2025-alpha3.rekor.sigstage.dev 09OnDKLj64v/9jHSFgrIIYx64lPFRn9sZjKdE+Ofkay13S/8f55s3V+tbs3sjENTX50HEuexkobhAvtBpd0YkrSHCww=\n— witness.navigli.sunlight.geomys.org o+AP4gAAAABq2+U8ECflsxuuqq92m3E3moWD/H/n01E0kUGZMZPfHNXIdfhLpN68/UZEIz9Y2CIAWSj5uwM3ZVSXiU0rDcBGFv4LDw==\n— witness.stagemole.eu Z/euoAAAAABq2+U8T7vbc2q9MGGJY1k/pesmL7MoINXETPHftkSHQMoEij4DHRcY3WPt/mwGoK6hg6fXzx+8l/H90B/9VrzGzsF8Aw==\n— staging.witness.transparency.goog/ring-any-bells LhqNyQAAAABq2+U939LBYOGTAI1qMecHGwESV8LBAavciQjUpCrY4CQhqxw+dYhfEYWK7eFxEONyoVq0+QYwLPXXzyZlDs1Ql09QCg==\n— krabbel.ct.ipng.ch SxDb2AAAAABq2+U9s8MWdwemS2Y25/zbUMlrABnueqzx5UYgoUKHhfxrIgw6sCTULd8H4CIGANG4Mo02Ge0KyQwtNzYMljVXmkjLAQ==\n"
+   }
+  },
+  "canonicalizedBody": "eyJhcGlWZXJzaW9uIjoiMC4wLjIiLCJraW5kIjoiaGFzaGVkcmVrb3JkIiwic3BlYyI6eyJoYXNoZWRSZWtvcmRWMDAyIjp7ImRhdGEiOnsiYWxnb3JpdGhtIjoiU0hBMl81MTIiLCJkaWdlc3QiOiJSK3JLQlU2dTJzQWpmcjVRYWdsUklLRTZ1bCtod0hITlc2Z2ZWazc3NTc5QUUxVDZQSnJKZFlLMGptdE9EbCs0NE9jdkczTXE0SlhUaGRSbGhuTzZ0Zz09In0sInNpZ25hdHVyZSI6eyJjb250ZW50IjoiWHhvWDdwWnFyclVKUWdMUG5BUG8wYWpUMEtvbWZ6eXpEeVZmRndCYW92SDRNeTluTlNBWXYxd3IyUXBLUHVIczBkTndGUmh2RkFDNjM0N284Myt5QkE9PSIsInZlcmlmaWVyIjp7ImtleURldGFpbHMiOiJQS0lYX0VEMjU1MTlfUEgiLCJwdWJsaWNLZXkiOnsicmF3Qnl0ZXMiOiJNQ293QlFZREsyVndBeUVBWHhpTXVOdUFjK2djZFUrWFpHcTNUQzdyQ0ZsaUw0MkcrVUh1NVl5N1dlcz0ifX19fX19"
+ }
+}
