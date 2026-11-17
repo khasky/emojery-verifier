@@ -81,8 +81,8 @@ export function parseBadgePath(path) {
  */
 
 const GOOGLE_CLIENT_ID = "368200727057-40v0prpc56gpqiv6oiu3rval6su4jbuf.apps.googleusercontent.com";
-// The personal-account registration is created before genesis; until then Microsoft is not offered.
-const MICROSOFT_CLIENT_ID = "";
+// The registration for personal accounts only (signInAudience PersonalMicrosoftAccount).
+const MICROSOFT_CLIENT_ID = "9df5358c-98b0-43fd-a6cc-e1f373243e9d";
 const APPLE_SERVICES_ID = "app.emojery.web";
 
 /** @param {string} apiBase @returns {Provider[]} */
