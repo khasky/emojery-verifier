@@ -3,7 +3,7 @@
 // the last pin and the current checkpoint, checks them against Rekor, the mirror's
 // history and the pinned state through hash tiles, and pins the newest anchor.
 
-import { consistencyProof, decodeLeaf, equalBytes, fromBase64, OP, parseCheckpoint, subtreeFromTiles, tileWidth, toBase64, toHex, treeRoot, verifyConsistency, verifyNote } from "@emojery/shared/core";
+import { consistencyProof, decodeLeaf, equalBytes, fromBase64, OP, parseCheckpoint, sha256, subtreeFromTiles, tileWidth, toBase64, toHex, treeRoot, verifyConsistency, verifyNote } from "@emojery/shared/core";
 import { AnchorError, checkAnchor } from "./anchor.js";
 import { canonicalJwk, checkJwkFile, modulusHash } from "./enroll.js";
 import { entries, generations, readTile } from "./log.js";
@@ -419,11 +419,12 @@ export async function providerKey(ctx, gens, seq, provider, hash, firstAnchoredA
   if (witnessed.ok) {
     try {
       await checkJwkFile(text(witnessed), hash);
-      return "mirror";
     } catch (e) {
       ctx.report.fail(`mirror jwks/${name}: ${/** @type {Error} */ (e).message}`);
       return null;
     }
+    // The file alone could have been committed by hand; a run that fetched it live records it.
+    if ((await recordedJwks(ctx)).has(toHex(await sha256(witnessed.bytes)))) return "mirror";
   }
   if (ctx.getJson) {
     try {
@@ -436,18 +437,20 @@ export async function providerKey(ctx, gens, seq, provider, hash, firstAnchoredA
     } catch {}
   }
   const own = await ctx.bucket.get(`g${gens[gens.length - 1].generation}/jwks/${name}`);
-  if (own.ok) {
-    try {
-      await checkJwkFile(text(own), hash);
-    } catch (e) {
-      ctx.report.fail(`jwks/${name}: ${/** @type {Error} */ (e).message}`);
-      return null;
+  if (own.ok || witnessed.ok) {
+    if (own.ok) {
+      try {
+        await checkJwkFile(text(own), hash);
+      } catch (e) {
+        ctx.report.fail(`jwks/${name}: ${/** @type {Error} */ (e).message}`);
+        return null;
+      }
     }
     if (firstAnchoredAt !== undefined && ctx.now - firstAnchoredAt > UNWITNESSED_FOR_S) {
       ctx.report.fail(`leaf ${seq}: provider key ${name} is still witnessed by no one a week after the ENROLL was anchored`);
       return null;
     }
-    ctx.report.warn(`leaf ${seq}: provider key ${name} is not witnessed yet: it is only in the publisher's own files`);
+    ctx.report.warn(`leaf ${seq}: provider key ${name} is not witnessed yet: ${own.ok ? "it is only in the publisher's own files" : "the mirror holds it, but no verdict line records adding it"}`);
     return "bucket";
   }
   if (!witnessed.missing || !own.missing) {
@@ -456,6 +459,36 @@ export async function providerKey(ctx, gens, seq, provider, hash, firstAnchoredA
   }
   ctx.report.fail(`leaf ${seq}: ENROLL names provider key ${name}, which no witness and no file holds`);
   return null;
+}
+
+/**
+ * The sha256 of every jwks file a mirror run recorded adding (§10), from the verdict lines
+ * of this month back to the first month the mirror holds; read once per run.
+ * @param {Ctx & { jwksRecorded?: Promise<Set<string>> }} ctx
+ */
+function recordedJwks(ctx) {
+  ctx.jwksRecorded ??= (async () => {
+    /** @type {Set<string>} */
+    const seen = new Set();
+    const now = new Date(ctx.now * 1000);
+    for (let back = 0; ; back++) {
+      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - back, 1));
+      const r = await ctx.mirror.get(`verdicts/${d.toISOString().slice(0, 7)}.ndjson`);
+      // This month's file appears with its first run; an earlier gap is where the mirror starts.
+      if (!r.ok) {
+        if (back === 0) continue;
+        break;
+      }
+      for (const line of text(r).split("\n")) {
+        if (!line.trim()) continue;
+        try {
+          for (const h of JSON.parse(line).jwksAdded ?? []) seen.add(h);
+        } catch {}
+      }
+    }
+    return seen;
+  })();
+  return ctx.jwksRecorded;
 }
 
 /**
