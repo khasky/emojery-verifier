@@ -35,7 +35,7 @@ async function setup() {
   leaves.push(encodeLeaf({ op: OP.REVOKE, enrollSeq: BigInt(devs[1].seq), reasonCode: "automation", caseId: new Uint8Array(16).fill(5), banUntil: 0xffffffff }));
   await p.seal(leaves);
   await p.publish();
-  p.mirror.set(`jwks/test/${toHex(hash)}.json`, utf8(json));
+  await p.mirrorJwks(`jwks/test/${toHex(hash)}.json`, utf8(json));
   await p.anchor(NOW - 60);
   p.syncMirror();
   const pins = { ...p.pins, providers: [{ id: "test", iss: ISS, aud: [AUD], jwksUri: "https://issuer.test/jwks" }] };

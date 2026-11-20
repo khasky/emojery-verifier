@@ -39,7 +39,7 @@ async function log({ badSig = false, iss = ISS } = {}) {
   await p.seal([enroll, await react("👍", "", 1), await react("🔥", "👍", 2)]);
   await p.publish();
   p.bucket.set("g0/proofs/0", proof);
-  p.mirror.set(`jwks/test/${toHex(key.hash)}.json`, utf8(key.json));
+  await p.mirrorJwks(`jwks/test/${toHex(key.hash)}.json`, utf8(key.json));
   await p.anchor(NOW - 60);
   p.syncMirror();
   return p;
@@ -92,3 +92,12 @@ test("a proof object that does not hash to proof_hash fails", async () => {
   assert.match(report.failures.join("\n"), /proof_hash/);
 });
 
+
+test("a mirror key no verdict line records adding witnesses nothing", async () => {
+  const honest = await run(await log());
+  assert.doesNotMatch(honest.report.warnings.join("\n"), /not witnessed/);
+  const p = await log();
+  p.mirror.delete("verdicts/2026-10.ndjson");
+  const { report } = await run(p);
+  assert.match(report.warnings.join("\n"), /provider key test\/[0-9a-f]{64}\.json is not witnessed yet: the mirror holds it, but no verdict line records adding it/);
+});

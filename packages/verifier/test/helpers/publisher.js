@@ -4,7 +4,7 @@
 // rewinds. Files land in two Maps, the bucket and the mirror, served by `host()`.
 
 import { ed25519, ed25519ph } from "@noble/curves/ed25519.js";
-import { buildHashTiles, checkpointText, concat, consistencyProof, encodeEntryBundle, entriesPath, hashTilePath, inclusionProof, leafHash, noteKeyId, rewindText, sha512, subtreeFromLeafHashes, TILE_WIDTH, toBase64, treeRoot, utf8 } from "@emojery/shared/core";
+import { buildHashTiles, checkpointText, concat, consistencyProof, encodeEntryBundle, entriesPath, hashTilePath, inclusionProof, leafHash, noteKeyId, rewindText, sha256, sha512, subtreeFromLeafHashes, TILE_WIDTH, toBase64, toHex, treeRoot, utf8 } from "@emojery/shared/core";
 import { anchorFile } from "../../src/anchor.js";
 
 const SPKI = Uint8Array.from([0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00]);
@@ -129,6 +129,20 @@ export class Publisher {
     this.bucket.set(`${g}/anchors/${this.leaves.length}.json`, utf8(file));
     this.bucket.set(`${g}/anchors/latest.json`, utf8(file));
     return file;
+  }
+
+  /**
+   * A provider key the mirror's own run fetched live: the file, and the verdict line of
+   * that run recording its sha256 in jwksAdded.
+   * @param {string} path @param {Uint8Array} bytes
+   */
+  async mirrorJwks(path, bytes) {
+    this.mirror.set(path, bytes);
+    const month = "verdicts/2026-10.ndjson";
+    const held = this.mirror.get(month);
+    const line = JSON.stringify({ at: "2026-10-23T23:30:00.000Z", verdict: "PASS", origin: null, size: null, notes: [], jwksAdded: [toHex(await sha256(bytes))] });
+    this.mirror.set(month, utf8(`${held ? new TextDecoder().decode(held) : ""}${line}
+`));
   }
 
   /** Copies the bucket's anchors and index.json to the mirror. */
