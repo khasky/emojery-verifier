@@ -1,6 +1,6 @@
 {
   "name": "@emojery/shared",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "The Emojery log format, signed messages and site rules, shared by the verifier, the extension and the publisher",
   "license": "Apache-2.0",
   "author": {
