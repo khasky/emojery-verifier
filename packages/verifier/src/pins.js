@@ -61,10 +61,10 @@ export const LOGS = Object.freeze({
     anchorIntervalS: 1800,
   },
   "log-staging.emojery.app": {
-    // The first key signed g0-g4; its seed was exposed, and the second signs from g5 on.
+    // The first key signed g0-g5 (its seed was exposed; g5 opened before the LogWriter took the new one), the second signs from g6 on.
     logKeys: [
       { publicKey: "P37N5YTTgfbn4L1oW4lLnQM7BsHQEYgY4QpnkYLNEaM=", fromGeneration: 0, fromSize: 0 },
-      { publicKey: "i9b56p+dFKKOyC5/RLR1FEwqN3on09JfqIM2JSVGcj0=", fromGeneration: 5, fromSize: 0 },
+      { publicKey: "i9b56p+dFKKOyC5/RLR1FEwqN3on09JfqIM2JSVGcj0=", fromGeneration: 6, fromSize: 0 },
     ],
     enroll: { 2: { vkSha256: "ba44c95ba2fef66e7eff5b15590a9d5f55dae324239873180384f7d7a5a4321a" } },
     saltCommitment: "7d68320622d41287d5c9fa0cf5352c0057112c9c5ebf15479356801f69aa46d1",
