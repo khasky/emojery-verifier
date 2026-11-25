@@ -1,0 +1,78 @@
+name: Publish
+
+# Publishes both packages to npm when a version tag is pushed: @emojery/shared first, then
+# @emojery/verifier, which depends on that exact version. One version for the workspace, so the
+# tag must equal the version in both package.json files.
+#
+# npm trusted publishing: the job's GitHub OIDC token is exchanged for a short-lived publish
+# credential, so no npm token is stored in this repository, and every publish carries a
+# provenance statement tying the tarball to this workflow run and commit. Each package names
+# this repository, this workflow file and the `npm` environment as its trusted publisher on
+# npmjs.com.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Check the tag against both versions
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          for f in packages/shared/package.json packages/verifier/package.json; do
+            v="v$(node -p "require('./$f').version")"
+            if [ "$v" != "$TAG" ]; then
+              echo "::error file=$f::version $v, tag $TAG"
+              exit 1
+            fi
+          done
+
+      # Trusted publishing needs npm 11.5.1 or newer.
+      - name: Check the npm version
+        run: |
+          node -e '
+            const [a, b, c] = process.argv[1].split(".").map(Number);
+            if (a < 11 || (a === 11 && (b < 5 || (b === 5 && c < 1)))) {
+              console.error(`::error::npm ${process.argv[1]} cannot publish with trusted publishing`);
+              process.exit(1);
+            }' "$(npm --version)"
+
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - run: pnpm selftest
+
+      # pnpm pack writes the exact version over the workspace:* dependency; npm publishes the
+      # tarballs, with the OIDC exchange and the provenance statement.
+      - name: Pack
+        run: pnpm -r pack --pack-destination "$RUNNER_TEMP/pack"
+
+      - name: Publish @emojery/shared
+        run: npm publish "$RUNNER_TEMP/pack/emojery-shared-${GITHUB_REF_NAME#v}.tgz" --access public --provenance
+
+      - name: Publish @emojery/verifier
+        run: npm publish "$RUNNER_TEMP/pack/emojery-verifier-${GITHUB_REF_NAME#v}.tgz" --access public --provenance

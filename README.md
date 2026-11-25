@@ -22,6 +22,15 @@ npx @emojery/verifier --leaf <n> --pubkey <key> --counter <c>   # one vote of yo
 npx @emojery/verifier --target github/khasky/emojery            # one target's count against the API
 ```
 
+It checks the production log, `log.emojery.app`, unless `--log log-staging.emojery.app` names the staging one. The trust anchors of each log are in the code of this tool ([pins.js](packages/verifier/src/pins.js)), never read from the operator's files:
+
+| Log | Log key (Ed25519, base64) | Files | Mirror | Counts API |
+| --- | --- | --- | --- | --- |
+| `log.emojery.app` | `z0z5ZBrlz67P2+FD+kz5ayXyFQyCCB2rQzPxPUtery4=` | `https://log.emojery.app` | [`emojery-tlog`](https://github.com/khasky/emojery-tlog) | `https://api.emojery.app` |
+| `log-staging.emojery.app` | `P37N5YTTgfbn4L1oW4lLnQM7BsHQEYgY4QpnkYLNEaM=` | `https://log-staging.emojery.app` | [`emojery-tlog-staging`](https://github.com/khasky/emojery-tlog-staging) | `https://api-staging.emojery.app` |
+
+The same file pins each log's salt commitment, the hash of the enrollment verification key, the accepted sign-in providers and the Rekor shards. A pin changes only with a release of this tool.
+
 The quick check keeps a small state file (`~/.emojery-verifier/state.json`, or `--state <path>`) with the last anchored checkpoint it verified; the next run checks that the log extends it. `--json` prints the verdict as one JSON object. `--help` lists every option.
 
 ## Reading the result
