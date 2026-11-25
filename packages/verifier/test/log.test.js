@@ -13,13 +13,13 @@ const rewind = (k, n, m) => signNote(rewindText({ origin: `${LOG}/g${k + 1}`, fo
 const index = async (...recs) => JSON.stringify({ records: await Promise.all(recs.map(async ([k, n, m]) => ({ kind: "rewind", note: await rewind(k, n, m) }))) });
 
 test("no index.json: one generation", async () => {
-  const g = await generations(null, LOG, pub);
+  const g = await generations(null, LOG, () => pub);
   assert.deepEqual(g, [{ origin: `${LOG}/g0`, generation: 0, start: 0, end: null }]);
   assert.equal(originAt(g, 5), `${LOG}/g0`);
 });
 
 test("one rewind: leaves below N stay in g0", async () => {
-  const g = await generations(await index([0, 100, 150]), LOG, pub);
+  const g = await generations(await index([0, 100, 150]), LOG, () => pub);
   assert.equal(g.length, 2);
   assert.equal(g[0].end, 150);
   assert.equal(originAt(g, 99), `${LOG}/g0`);
@@ -29,7 +29,7 @@ test("one rewind: leaves below N stay in g0", async () => {
 });
 
 test("a deeper second rewind takes back part of the first prefix", async () => {
-  const g = await generations(await index([0, 100, 150], [1, 50, 120]), LOG, pub);
+  const g = await generations(await index([0, 100, 150], [1, 50, 120]), LOG, () => pub);
   assert.deepEqual(g.map((x) => x.start), [0, 100, 50]);
   assert.equal(originAt(g, 30), `${LOG}/g0`);
   assert.equal(originAt(g, 70), `${LOG}/g2`);
@@ -39,16 +39,16 @@ test("a deeper second rewind takes back part of the first prefix", async () => {
 });
 
 test("records that do not chain, or are not signed by the log, are refused", async () => {
-  await assert.rejects(generations(await index([1, 10, 20]), LOG, pub), /forks from/);
-  await assert.rejects(generations(await index([0, 10, 20], [0, 10, 20]), LOG, pub), /forks from/);
+  await assert.rejects(generations(await index([1, 10, 20]), LOG, () => pub), /forks from/);
+  await assert.rejects(generations(await index([0, 10, 20], [0, 10, 20]), LOG, () => pub), /forks from/);
   const other = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
   const otherPub = new Uint8Array(await crypto.subtle.exportKey("raw", other.publicKey));
-  await assert.rejects(generations(await index([0, 10, 20]), LOG, otherPub));
-  await assert.rejects(generations(JSON.stringify({ records: [{ kind: "erasure", note: "x" }] }), LOG, pub), /unknown kind/);
+  await assert.rejects(generations(await index([0, 10, 20]), LOG, () => otherPub));
+  await assert.rejects(generations(JSON.stringify({ records: [{ kind: "erasure", note: "x" }] }), LOG, () => pub), /unknown kind/);
 });
 
 test("tiles: the full object first, a partial at the right edge, under the right prefix", async () => {
-  const g = await generations(await index([0, 257, 400]), LOG, pub);
+  const g = await generations(await index([0, 257, 400]), LOG, () => pub);
   const leaves = Array.from({ length: 3 }, (_, i) => new Uint8Array([i]));
   const served = new Map([
     ["g0/tile/entries/000", encodeEntryBundle(Array.from({ length: 256 }, () => new Uint8Array([9])))],
@@ -74,7 +74,7 @@ test("tiles: the full object first, a partial at the right edge, under the right
 });
 
 test("a partial the publisher replaced is read from the full object", async () => {
-  const g = await generations(null, LOG, pub);
+  const g = await generations(null, LOG, () => pub);
   const leaves = Array.from({ length: 256 }, (_, i) => new Uint8Array([i, i]));
   const bucket = {
     get: async (p) => (p === "g0/tile/entries/000" ? { ok: true, bytes: encodeEntryBundle(leaves), headers: new Headers() } : { ok: false, missing: true, status: 404 }),
@@ -82,4 +82,15 @@ test("a partial the publisher replaced is read from the full object", async () =
   const r = await readTile(bucket, g, "entries", 0, 0, 5);
   assert.equal(r.ok, true);
   assert.deepEqual(entries(r, 5), leaves.slice(0, 5));
+});
+
+test("each record verifies under the key of the generation it opens", async () => {
+  const other = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
+  const otherPub = new Uint8Array(await crypto.subtle.exportKey("raw", other.publicKey));
+  const second = await signNote(rewindText({ origin: `${LOG}/g2`, forkedFrom: `${LOG}/g1`, at: 1790000000001, n: 50, rootN: root, m: 120, rootM: root, reason: "drill" }), LOG, other.privateKey, otherPub);
+  const text = JSON.stringify({ records: [{ kind: "rewind", note: await rewind(0, 100, 150) }, { kind: "rewind", note: second }] });
+  const g = await generations(text, LOG, (gen) => (gen < 2 ? pub : otherPub));
+  assert.deepEqual(g.map((x) => x.origin), [`${LOG}/g0`, `${LOG}/g1`, `${LOG}/g2`]);
+  await assert.rejects(generations(text, LOG, () => otherPub));
+  await assert.rejects(generations(text, LOG, () => pub));
 });

@@ -247,7 +247,7 @@ log.emojery.app/g0
 ```
 
 - Line 1 is the origin, line 2 the tree size in decimal, line 3 the root. Further lines before the blank line are extensions; a verifier accepts and ignores them.
-- The signature is Ed25519 by the log key over the text: every line up to and including the newline before the blank line.
+- The signature is Ed25519 by the log key that covers the checkpoint's position, its origin's generation and its size (§11), over the text: every line up to and including the newline before the blank line.
 - The key name is `log_name`, without the generation, so a rewind does not change the key. `key_id = sha256(log_name ‖ 0x0a ‖ 0x01 ‖ public key)[0:4]`.
 - Signature lines under other key names are ignored: third-party cosignatures can be added without a format change.
 
@@ -287,7 +287,7 @@ Anchors are trusted only together with the mirror's history (§12).
 {"records":[{"kind":"rewind","note":"<signed note>"}]}
 ```
 
-Each record is a signed note under the log key (key name `log_name`). A rewind note's text, one field per line:
+Each record is a signed note under the log key that covers the start of the generation it opens, (`g<k+1>`, 0) (§11); key name `log_name`. A rewind note's text, one field per line:
 
 ```text
 emojery-rewind-v1
@@ -317,7 +317,7 @@ The provider of an ENROLL is the one §11 maps its (`iss`, `aud`) to; every witn
 
 ## 11. Trust anchors
 
-A verifier carries, in its own code and per `log_name`: the log's public key (with the size range each key covers), the verification key hash of each ENROLL version, `salt_commitment`, the accepted (`iss`, `aud`) pairs with each provider's JWKS address, and the keys of the Rekor shards with their periods. None of these is read from a file the operator publishes. An ENROLL whose (`iss`, `aud`) is not listed for the log is invalid; the staging test issuer is listed only for `log-staging.emojery.app`. A log lists exactly one `aud` per `iss`: the nullifier hashes `aud`, so a second client id would give one provider account a second nullifier and a second vote.
+A verifier carries, in its own code and per `log_name`: the log's public keys, each with the first position it covers (a generation, then a size within it; a later key replaces the one before from that position on), the verification key hash of each ENROLL version, `salt_commitment`, the accepted (`iss`, `aud`) pairs with each provider's JWKS address, and the keys of the Rekor shards with their periods. None of these is read from a file the operator publishes. An ENROLL whose (`iss`, `aud`) is not listed for the log is invalid; the staging test issuer is listed only for `log-staging.emojery.app`. A log lists exactly one `aud` per `iss`: the nullifier hashes `aud`, so a second client id would give one provider account a second nullifier and a second vote.
 
 ## 12. Verification rules
 

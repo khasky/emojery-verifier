@@ -23,7 +23,7 @@ async function withDir(fn) {
 const run = (dir, pub, verdict = "PASS") => {
   const report = new Report();
   if (verdict === "FAIL") report.fail("something");
-  return recordRun({ dir, bucket: pub.host("bucket"), logName: pub.logName, logKey: pub.key.pk, report, state: { origin: pub.origin, size: pub.leaves.length }, jwksAdded: [], now: new Date("2026-10-24T06:00:00Z") });
+  return recordRun({ dir, bucket: pub.host("bucket"), logName: pub.logName, keyAt: () => pub.key.pk, report, state: { origin: pub.origin, size: pub.leaves.length }, jwksAdded: [], now: new Date("2026-10-24T06:00:00Z") });
 };
 
 test("copies new anchors along prev, once, and moves latest.json", async () => {
@@ -62,7 +62,7 @@ test("keeps a differing anchor beside the mirror's copy and fails the run", asyn
     // The bucket now serves another anchor at the same size.
     await pub.anchor(1_790_000_100);
     const report = new Report();
-    await recordRun({ dir, bucket: pub.host("bucket"), logName: pub.logName, logKey: pub.key.pk, report, state: { origin: pub.origin, size: 1 }, jwksAdded: [], now: new Date() });
+    await recordRun({ dir, bucket: pub.host("bucket"), logName: pub.logName, keyAt: () => pub.key.pk, report, state: { origin: pub.origin, size: 1 }, jwksAdded: [], now: new Date() });
     assert.equal(report.verdict, "FAIL");
     assert.equal(await readFile(join(dir, "g0/anchors/1.json"), "utf8"), held);
     assert.equal(await readFile(join(dir, "g0/anchors/latest.json"), "utf8"), held);

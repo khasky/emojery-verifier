@@ -4,12 +4,12 @@
 
 import { writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
-import { fromBase64, fromBase64Url, fromHex } from "@emojery/shared/core";
+import { fromBase64Url, fromHex } from "@emojery/shared/core";
 import { countsPath } from "@emojery/shared/api";
 import { fastCheck } from "./fast.js";
 import { fullCheck } from "./full.js";
 import { localHost, recordRun, snapshotJwks } from "./mirror.js";
-import { pinsFor } from "./pins.js";
+import { logKeyBytes, pinsFor } from "./pins.js";
 import { Report } from "./report.js";
 import { leafCheck, targetCheck } from "./single.js";
 import { host, read, text } from "./source.js";
@@ -135,8 +135,7 @@ async function main() {
       await saveState(args.state, file);
     }
     if (mirrorDir) {
-      const key = fromBase64(pins.logKeys[pins.logKeys.length - 1]?.publicKey ?? "");
-      const r = await recordRun({ dir: mirrorDir, bucket: ctx.bucket, logName: args.log, logKey: key, report, state: file.logs[args.log], jwksAdded, now: new Date() });
+      const r = await recordRun({ dir: mirrorDir, bucket: ctx.bucket, logName: args.log, keyAt: (g, s) => logKeyBytes(pins, g, s), report, state: file.logs[args.log], jwksAdded, now: new Date() });
       if (args["message-file"]) await writeFile(args["message-file"], `${r.message}
 `);
     }

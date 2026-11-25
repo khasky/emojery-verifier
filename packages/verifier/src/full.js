@@ -3,11 +3,11 @@
 // (signatures, ENROLL proofs and provider keys, pairs), the hash tiles rebuilt from the
 // leaves and compared with the published ones, the root against the checkpoint.
 
-import { buildHashTiles, equalBytes, Fold, FoldError, fromBase64, fromHex, leafHash, sha256, subtreeFromLeafHashes, tileWidth, toBase64, toHex, treeRoot } from "@emojery/shared/core";
+import { buildHashTiles, equalBytes, Fold, FoldError, fromHex, leafHash, sha256, subtreeFromLeafHashes, tileWidth, toBase64, toHex, treeRoot } from "@emojery/shared/core";
 import { canonicalJwk, checkJwkFile, enrollPublicInputs, modulusHash, proofChecker, verificationKey } from "./enroll.js";
 import { allAnchors, fastCheck, providerKey } from "./fast.js";
 import { entries, generations, originAt, prefixFor, readTile } from "./log.js";
-import { providerFor } from "./pins.js";
+import { logKeyBytes, providerFor } from "./pins.js";
 import { text } from "./source.js";
 
 /**
@@ -19,7 +19,7 @@ export async function fullCheck(ctx, pinned) {
   const { report, pins } = ctx;
   if (report.failures.length) return state;
   const idx = await ctx.bucket.get("index.json");
-  const gens = await generations(idx.ok ? text(idx) : null, ctx.logName, fromBase64(pins.logKeys[pins.logKeys.length - 1].publicKey));
+  const gens = await generations(idx.ok ? text(idx) : null, ctx.logName, (g, s) => logKeyBytes(pins, g, s));
   const prefix = `g${gens[gens.length - 1].generation}`;
   const cpRead = await ctx.bucket.get(`${prefix}/checkpoint`);
   if (!cpRead.ok) {

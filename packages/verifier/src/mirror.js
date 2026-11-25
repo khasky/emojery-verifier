@@ -123,13 +123,13 @@ export async function mirrorAnchors(dir, bucket, prefix) {
 
 /**
  * After a check: the anchors of every generation, index.json on PASS, the verdict line.
- * @param {{ dir: string, bucket: any, logName: string, logKey: Uint8Array, report: import("./report.js").Report, state: { origin: string, size: number } | undefined, jwksAdded: string[], now: Date }} o
+ * @param {{ dir: string, bucket: any, logName: string, keyAt: import("./log.js").KeyAt, report: import("./report.js").Report, state: { origin: string, size: number } | undefined, jwksAdded: string[], now: Date }} o
  */
 export async function recordRun(o) {
   const { dir, bucket, report, state, jwksAdded, now } = o;
   const idx = await bucket.get("index.json");
   // A bad index.json has already failed the check; its anchors are still worth keeping.
-  const gens = (await generations(idx.ok ? text(idx) : null, o.logName, o.logKey).catch(() => [{ generation: 0 }])).map((g) => g.generation);
+  const gens = (await generations(idx.ok ? text(idx) : null, o.logName, o.keyAt).catch(() => [{ generation: 0 }])).map((g) => g.generation);
   let anchors = 0;
   for (const g of gens) {
     const r = await mirrorAnchors(dir, bucket, `g${g}`);

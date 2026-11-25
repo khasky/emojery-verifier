@@ -52,7 +52,8 @@ export class Publisher {
   /** @param {{ logName?: string, shard?: FakeShard }} [o] */
   constructor(o = {}) {
     this.logName = o.logName ?? "log-staging.emojery.app";
-    this.key = keyPair();
+    /** Every key the log has signed with, each from the position it took over. */
+    this.keys = [{ pair: keyPair(), fromGeneration: 0, fromSize: 0 }];
     this.shard = o.shard ?? new FakeShard();
     this.generation = 0;
     /** @type {Uint8Array[]} */
@@ -75,8 +76,18 @@ export class Publisher {
     return `${this.logName}/g${this.generation}`;
   }
 
+  /** The key the log signs with now. */
+  get key() {
+    return this.keys[this.keys.length - 1].pair;
+  }
+
+  /** A log that has only ever signed with `pair`. */
+  set key(pair) {
+    this.keys = [{ pair, fromGeneration: 0, fromSize: 0 }];
+  }
+
   get pins() {
-    return { logKeys: [{ publicKey: toBase64(this.key.pk), fromSize: 0 }], enroll: {}, saltCommitment: "", providers: [], mirror: "", bucket: "", api: "", anchorIntervalS: 1800 };
+    return { logKeys: this.keys.map((k) => ({ publicKey: toBase64(k.pair.pk), fromGeneration: k.fromGeneration, fromSize: k.fromSize })), enroll: {}, saltCommitment: "", providers: [], mirror: "", bucket: "", api: "", anchorIntervalS: 1800 };
   }
 
   /** @param {Uint8Array[]} leaves */
@@ -148,6 +159,17 @@ export class Publisher {
   /** Copies the bucket's anchors and index.json to the mirror. */
   syncMirror() {
     for (const [k, v] of this.bucket) if (/\/anchors\//.test(k) || k === "index.json") this.mirror.set(k, v);
+  }
+
+  /**
+   * A new signing key for every checkpoint after the current size; with `atNextGeneration`,
+   * from the start of the generation the next rewind opens, so that rewind is the first
+   * thing it signs.
+   * @param {{ atNextGeneration?: boolean }} [o]
+   */
+  rotateKey(o = {}) {
+    const at = o.atNextGeneration ? { fromGeneration: this.generation + 1, fromSize: 0 } : { fromGeneration: this.generation, fromSize: this.leaves.length + 1 };
+    this.keys.push({ pair: keyPair(), ...at });
   }
 
   /**
