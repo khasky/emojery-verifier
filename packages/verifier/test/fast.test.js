@@ -238,3 +238,45 @@ test("a rewind that rewrites the shared prefix fails", async () => {
   const { report } = await run(p);
   assert.equal(report.verdict, "FAIL", report.toText());
 });
+
+test("a key rotated at a rewind: the closed generation verifies under the old key, the new one under the new", async () => {
+  const p = await honest(600);
+  const first = await run(p);
+  p.rotateKey({ atNextGeneration: true });
+  await p.rewind(600, "key rotation");
+  await p.seal(junk(20, 1000));
+  await p.publish();
+  await p.anchor(NOW);
+  p.syncMirror();
+  const { report, state } = await run(p, first.state);
+  assert.equal(report.verdict, "PASS", report.toText());
+  assert.equal(state.origin, "log-staging.emojery.app/g1");
+  assert.equal(p.pins.logKeys.length, 2);
+});
+
+test("a key rotated inside a generation covers the checkpoints from its size on", async () => {
+  const p = await honest(300);
+  const first = await run(p);
+  p.rotateKey();
+  await p.seal(junk(20, 1000));
+  await p.publish();
+  await p.anchor(NOW);
+  p.syncMirror();
+  const { report, state } = await run(p, first.state);
+  assert.equal(report.verdict, "PASS", report.toText());
+  assert.equal(state.size, 320);
+});
+
+test("a rewind record signed by a key not pinned for the generation it opens fails", async () => {
+  const p = await honest(600);
+  const first = await run(p);
+  p.rotateKey({ atNextGeneration: true });
+  await p.rewind(600, "key rotation");
+  await p.seal(junk(20, 1000));
+  await p.publish();
+  await p.anchor(NOW);
+  p.syncMirror();
+  const pins = { ...p.pins, logKeys: p.pins.logKeys.slice(0, 1) };
+  const report = new Report();
+  await assert.rejects(fastCheck({ logName: p.logName, pins, bucket: p.host("bucket"), mirror: p.host("mirror"), report, now: NOW, shards: [p.shard.pin] }, first.state));
+});

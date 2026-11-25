@@ -2,12 +2,12 @@
 // Runs without state: --leaf (one entry, from a receipt) and --target (one target's
 // count against the API's). Both trust only an anchored checkpoint.
 
-import { compareBytes, decodeLeaf, enrollHash, equalBytes, Fold, FoldError, fromBase64, fromHex, inclusionProof, leafHash, OP, parseCheckpoint, reactMessage, retireMessage, sha256, subtreeFromTiles, targetKey, tileWidth, toHex, utf8, verifyInclusion, verifyNote } from "@emojery/shared/core";
+import { compareBytes, decodeLeaf, enrollHash, equalBytes, Fold, FoldError, fromHex, inclusionProof, leafHash, OP, parseCheckpoint, reactMessage, retireMessage, sha256, subtreeFromTiles, targetKey, tileWidth, toHex, utf8, verifyInclusion, verifyNote } from "@emojery/shared/core";
 import { checkAnchor } from "./anchor.js";
 import { checkJwkFile, enrollPublicInputs, proofChecker, verificationKey } from "./enroll.js";
-import { providerKey } from "./fast.js";
-import { entries, generations, originAt, prefixFor, readTile } from "./log.js";
-import { logKeyAt, providerFor, REKOR_SHARDS } from "./pins.js";
+import { anchorKey, providerKey } from "./fast.js";
+import { claimedPosition, entries, generations, originAt, prefixFor, readTile } from "./log.js";
+import { logKeyBytes, providerFor, REKOR_SHARDS } from "./pins.js";
 import { text } from "./source.js";
 
 /**
@@ -15,9 +15,8 @@ import { text } from "./source.js";
  * @param {import("./fast.js").Ctx} ctx
  */
 async function anchored(ctx) {
-  const key = fromBase64(ctx.pins.logKeys[ctx.pins.logKeys.length - 1].publicKey);
   const idx = await ctx.bucket.get("index.json");
-  const gens = await generations(idx.ok ? text(idx) : null, ctx.logName, key);
+  const gens = await generations(idx.ok ? text(idx) : null, ctx.logName, (g, s) => logKeyBytes(ctx.pins, g, s));
   const prefix = `g${gens[gens.length - 1].generation}`;
   const r = await ctx.bucket.get(`${prefix}/anchors/latest.json`);
   const m = r.ok ? r : await ctx.mirror.get(`${prefix}/anchors/latest.json`);
@@ -25,7 +24,7 @@ async function anchored(ctx) {
     ctx.report.wait("no anchor could be read");
     return null;
   }
-  const a = await checkAnchor(text(m), { logName: ctx.logName, logKey: key, shards: ctx.shards ?? REKOR_SHARDS, now: ctx.now });
+  const a = await checkAnchor(text(m), { logName: ctx.logName, logKey: anchorKey(ctx.pins, text(m)), shards: ctx.shards ?? REKOR_SHARDS, now: ctx.now });
   if (a.status !== "ok" || !a.checkpoint) {
     ctx.report.wait(`the newest anchor does not count (${a.status})`);
     return null;
@@ -150,10 +149,8 @@ export async function targetCheck(ctx, targets) {
     return;
   }
   const raw = text(cpRead);
-  const head = parseCheckpoint(raw.slice(0, raw.indexOf("\n\n") + 1));
-  const cpKey = logKeyAt(ctx.pins, head.size);
-  if (!cpKey) throw new Error(`no pinned log key covers size ${head.size}`);
-  const cp = parseCheckpoint(await verifyNote(raw, ctx.logName, fromBase64(cpKey.publicKey)));
+  const at = claimedPosition(raw);
+  const cp = parseCheckpoint(await verifyNote(raw, ctx.logName, logKeyBytes(ctx.pins, at.generation, at.size)));
   const answers = await Promise.all(targets.map((t) => ctx.fetchCounts(t.site, t.targetId)));
   const wanted = new Set(targets.map((t) => targetKey(t.site, t.targetId)));
   /** @type {Map<string, { reasons: Map<string, number>, cases: Set<string>, retired: number, retireCases: Set<string> }>} */

@@ -3,7 +3,7 @@
 // prefix every object lives under (docs/PROTOCOL.md §6, §9), and tiles read with the
 // fallback from a full object to a larger partial one.
 
-import { decodeEntryBundle, entriesPath, hashTilePath, parseOrigin, parseRewind, TILE_WIDTH, verifyNote } from "@emojery/shared/core";
+import { decodeEntryBundle, entriesPath, hashTilePath, parseCheckpoint, parseOrigin, parseRewind, TILE_WIDTH, verifyNote } from "@emojery/shared/core";
 import { text } from "./source.js";
 
 /**
@@ -16,13 +16,19 @@ import { text } from "./source.js";
  */
 
 /**
+ * The log key for a position (generation, size), as the pins give it.
+ * @typedef {(generation: number, size: number) => Uint8Array} KeyAt
+ */
+
+/**
  * Reads index.json and returns the generations in order. Every record must verify under
- * the log key; the chain must run g0, g1, ... each forking from the one before.
+ * the key of the generation it opens; the chain must run g0, g1, ... each forking from the
+ * one before.
  * @param {string | null} indexText null when the file is absent
- * @param {string} logName @param {Uint8Array} logKey
+ * @param {string} logName @param {KeyAt} keyAt
  * @returns {Promise<Generation[]>}
  */
-export async function generations(indexText, logName, logKey) {
+export async function generations(indexText, logName, keyAt) {
   /** @type {Generation[]} */
   const out = [{ origin: `${logName}/g0`, generation: 0, start: 0, end: null }];
   if (indexText === null) return out;
@@ -30,8 +36,8 @@ export async function generations(indexText, logName, logKey) {
   if (!doc || !Array.isArray(doc.records)) throw new Error("index.json has no records array");
   for (const rec of doc.records) {
     if (rec?.kind !== "rewind" || typeof rec.note !== "string") throw new Error(`index.json record of unknown kind ${rec?.kind}`);
-    const r = parseRewind(await verifyNote(rec.note, logName, logKey));
     const cur = out[out.length - 1];
+    const r = parseRewind(await verifyNote(rec.note, logName, keyAt(cur.generation + 1, 0)));
     if (r.forkedFrom !== cur.origin) throw new Error(`rewind forks from ${r.forkedFrom}, current is ${cur.origin}`);
     const next = parseOrigin(r.origin);
     if (next.logName !== logName || next.generation !== cur.generation + 1) throw new Error(`rewind opens ${r.origin} after ${cur.origin}`);
@@ -40,6 +46,17 @@ export async function generations(indexText, logName, logKey) {
     out.push({ origin: r.origin, generation: next.generation, start: r.n, end: null });
   }
   return out;
+}
+
+/**
+ * The position a signed checkpoint claims, read before its signature is checked so the
+ * right key can check it: the generation of its origin and its size.
+ * @param {string} note
+ * @returns {{ generation: number, size: number }}
+ */
+export function claimedPosition(note) {
+  const head = parseCheckpoint(note.slice(0, note.indexOf("\n\n") + 1));
+  return { generation: parseOrigin(head.origin).generation, size: head.size };
 }
 
 /**

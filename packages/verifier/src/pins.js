@@ -4,6 +4,7 @@
 // verifier, which the reader installs on purpose.
 
 import { PROVIDERS } from "@emojery/shared/api";
+import { fromBase64 } from "@emojery/shared/core";
 
 /**
  * @typedef {object} Provider
@@ -19,7 +20,7 @@ import { PROVIDERS } from "@emojery/shared/api";
  * @property {string | null} until ISO date it closed, null while open
  *
  * @typedef {object} LogPins
- * @property {{ publicKey: string, fromSize: number }[]} logKeys raw 32-byte Ed25519 keys, base64, with the first size each covers
+ * @property {{ publicKey: string, fromGeneration: number, fromSize: number }[]} logKeys raw 32-byte Ed25519 keys, base64, in order, each with the first position it covers: a generation, then a size within it
  * @property {Record<number, { vkSha256: string }>} enroll verification-key hash per ENROLL version
  * @property {string} saltCommitment hex
  * @property {readonly Provider[]} providers
@@ -50,7 +51,7 @@ function providerPins(deployment) {
 /** @type {Readonly<Record<string, LogPins>>} */
 export const LOGS = Object.freeze({
   "log.emojery.app": {
-    logKeys: [{ publicKey: "z0z5ZBrlz67P2+FD+kz5ayXyFQyCCB2rQzPxPUtery4=", fromSize: 0 }],
+    logKeys: [{ publicKey: "z0z5ZBrlz67P2+FD+kz5ayXyFQyCCB2rQzPxPUtery4=", fromGeneration: 0, fromSize: 0 }],
     enroll: { 2: { vkSha256: "ba44c95ba2fef66e7eff5b15590a9d5f55dae324239873180384f7d7a5a4321a" } },
     saltCommitment: "f4e779a98fcb7f5fb74bcd31c0332ac0f1db6e32829505b8ab3e6de178f60157",
     providers: providerPins("production"),
@@ -60,7 +61,11 @@ export const LOGS = Object.freeze({
     anchorIntervalS: 1800,
   },
   "log-staging.emojery.app": {
-    logKeys: [{ publicKey: "P37N5YTTgfbn4L1oW4lLnQM7BsHQEYgY4QpnkYLNEaM=", fromSize: 0 }],
+    // The first key signed g0-g4; its seed was exposed, and the second signs from g5 on.
+    logKeys: [
+      { publicKey: "P37N5YTTgfbn4L1oW4lLnQM7BsHQEYgY4QpnkYLNEaM=", fromGeneration: 0, fromSize: 0 },
+      { publicKey: "i9b56p+dFKKOyC5/RLR1FEwqN3on09JfqIM2JSVGcj0=", fromGeneration: 5, fromSize: 0 },
+    ],
     enroll: { 2: { vkSha256: "ba44c95ba2fef66e7eff5b15590a9d5f55dae324239873180384f7d7a5a4321a" } },
     saltCommitment: "7d68320622d41287d5c9fa0cf5352c0057112c9c5ebf15479356801f69aa46d1",
     providers: providerPins("staging"),
@@ -79,13 +84,22 @@ export function pinsFor(logName) {
 }
 
 /**
- * The log key that covers `size`: the last key whose fromSize is at most size.
- * @param {LogPins} pins @param {number} size
+ * The log key that covers a position: the last key whose start (fromGeneration, then
+ * fromSize) is at or before it. A checkpoint's position is its origin's generation and its
+ * size; a rewind record's is the start of the generation it opens, (g, 0).
+ * @param {LogPins} pins @param {number} generation @param {number} size
  */
-export function logKeyAt(pins, size) {
+export function logKeyAt(pins, generation, size) {
   let key = null;
-  for (const k of pins.logKeys) if (k.fromSize <= size) key = k;
+  for (const k of pins.logKeys) if (k.fromGeneration < generation || (k.fromGeneration === generation && k.fromSize <= size)) key = k;
   return key;
+}
+
+/** logKeyAt's key as bytes; throws when no pinned key covers the position. @param {LogPins} pins @param {number} generation @param {number} size */
+export function logKeyBytes(pins, generation, size) {
+  const k = logKeyAt(pins, generation, size);
+  if (!k) throw new Error(`no pinned log key covers g${generation} at size ${size}`);
+  return fromBase64(k.publicKey);
 }
 
 /** @param {LogPins} pins @param {string} iss @param {string} aud */

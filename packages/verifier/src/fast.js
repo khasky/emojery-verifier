@@ -6,8 +6,8 @@
 import { consistencyProof, decodeLeaf, equalBytes, fromBase64, OP, parseCheckpoint, sha256, subtreeFromTiles, tileWidth, toBase64, toHex, treeRoot, verifyConsistency, verifyNote } from "@emojery/shared/core";
 import { AnchorError, checkAnchor } from "./anchor.js";
 import { canonicalJwk, checkJwkFile, modulusHash } from "./enroll.js";
-import { entries, generations, readTile } from "./log.js";
-import { logKeyAt, providerFor, REKOR_SHARDS } from "./pins.js";
+import { claimedPosition, entries, generations, readTile } from "./log.js";
+import { logKeyBytes, providerFor, REKOR_SHARDS } from "./pins.js";
 import { text } from "./source.js";
 
 const DAY_S = 24 * 3600;
@@ -29,13 +29,6 @@ const MAX_CHAIN = 256;
  * @typedef {import("./anchor.js").Anchor & { checkpoint: { origin: string, size: number, root: Uint8Array } }} GoodAnchor
  */
 
-/** @param {import("./pins.js").LogPins} pins @param {number} size */
-function keyFor(pins, size) {
-  const k = logKeyAt(pins, size);
-  if (!k) throw new Error(`no pinned log key covers size ${size}`);
-  return fromBase64(k.publicKey);
-}
-
 /**
  * Reads `path` from the bucket, falling back to the mirror when the bucket does not
  * answer. Returns { text, from } | { missing: true } | { unavailable: true }.
@@ -51,20 +44,23 @@ async function readEither(ctx, path, mirrorToo = true) {
   return { unavailable: true };
 }
 
-/** The size an anchor file claims, before anything is verified. @param {string} fileText */
-function claimedSize(fileText) {
+/**
+ * The key for an anchor file: the one covering the position its note claims. A file that
+ * does not parse gets the key at (0, 0) and fails in checkAnchor with the reason.
+ * @param {import("./pins.js").LogPins} pins @param {string} fileText
+ */
+export function anchorKey(pins, fileText) {
+  let at = { generation: 0, size: 0 };
   try {
-    const n = JSON.parse(fileText).note;
-    return parseCheckpoint(n.slice(0, n.indexOf("\n\n") + 1)).size;
-  } catch {
-    return 0;
-  }
+    at = claimedPosition(JSON.parse(fileText).note);
+  } catch {}
+  return logKeyBytes(pins, at.generation, at.size);
 }
 
 /** @param {Ctx} ctx @param {string} fileText @param {string} where @returns {Promise<import("./anchor.js").Anchor | null>} */
 async function anchorOrFail(ctx, fileText, where) {
   try {
-    return await checkAnchor(fileText, { logName: ctx.logName, logKey: keyFor(ctx.pins, claimedSize(fileText)), shards: ctx.shards ?? REKOR_SHARDS, now: ctx.now });
+    return await checkAnchor(fileText, { logName: ctx.logName, logKey: anchorKey(ctx.pins, fileText), shards: ctx.shards ?? REKOR_SHARDS, now: ctx.now });
   } catch (e) {
     if (e instanceof AnchorError) ctx.report.fail(`${where}: ${e.message}`);
     else throw e;
@@ -111,7 +107,6 @@ async function anchorChain(ctx, prefix, origin, newest, stopAt) {
 export async function fastCheck(ctx, pinned) {
   const { pins, report, logName } = ctx;
   if (pins.logKeys.length === 0) throw new Error(`no log key is pinned for ${logName} yet`);
-  const newestKey = fromBase64(pins.logKeys[pins.logKeys.length - 1].publicKey);
 
   // 1. Generations; the mirror's records must be a prefix of the bucket's.
   const idxBucket = await ctx.bucket.get("index.json");
@@ -128,7 +123,7 @@ export async function fastCheck(ctx, pinned) {
   } else if (idxMirror.ok && idxBucket.missing && (JSON.parse(text(idxMirror)).records ?? []).length > 0) {
     report.fail("the bucket serves no index.json while the mirror holds rewind records");
   }
-  const gens = await generations(indexText, logName, newestKey);
+  const gens = await generations(indexText, logName, (g, s) => logKeyBytes(pins, g, s));
   const cur = gens[gens.length - 1];
   const prefix = `g${cur.generation}`;
 
@@ -164,8 +159,8 @@ export async function fastCheck(ctx, pinned) {
   let cp = null;
   if (cpRead.text !== undefined) {
     try {
-      const head = parseCheckpoint(cpRead.text.slice(0, cpRead.text.indexOf("\n\n") + 1));
-      cp = parseCheckpoint(await verifyNote(cpRead.text, logName, keyFor(pins, head.size)));
+      const at = claimedPosition(cpRead.text);
+      cp = parseCheckpoint(await verifyNote(cpRead.text, logName, logKeyBytes(pins, at.generation, at.size)));
     } catch (e) {
       report.fail(`the current checkpoint does not verify: ${/** @type {Error} */ (e).message}`);
     }
