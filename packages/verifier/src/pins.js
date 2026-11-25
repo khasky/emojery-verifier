@@ -49,6 +49,16 @@ function providerPins(deployment) {
 
 /** @type {Readonly<Record<string, LogPins>>} */
 export const LOGS = Object.freeze({
+  "log.emojery.app": {
+    logKeys: [{ publicKey: "z0z5ZBrlz67P2+FD+kz5ayXyFQyCCB2rQzPxPUtery4=", fromSize: 0 }],
+    enroll: { 2: { vkSha256: "ba44c95ba2fef66e7eff5b15590a9d5f55dae324239873180384f7d7a5a4321a" } },
+    saltCommitment: "f4e779a98fcb7f5fb74bcd31c0332ac0f1db6e32829505b8ab3e6de178f60157",
+    providers: providerPins("production"),
+    mirror: "https://raw.githubusercontent.com/khasky/emojery-tlog/main",
+    bucket: "https://log.emojery.app",
+    api: "https://api.emojery.app",
+    anchorIntervalS: 1800,
+  },
   "log-staging.emojery.app": {
     logKeys: [{ publicKey: "P37N5YTTgfbn4L1oW4lLnQM7BsHQEYgY4QpnkYLNEaM=", fromSize: 0 }],
     enroll: { 2: { vkSha256: "ba44c95ba2fef66e7eff5b15590a9d5f55dae324239873180384f7d7a5a4321a" } },
