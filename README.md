@@ -27,7 +27,7 @@ It checks the production log, `log.emojery.app`, unless `--log log-staging.emoje
 | Log | Log keys (Ed25519, base64) | Files | Mirror | Counts API |
 | --- | --- | --- | --- | --- |
 | `log.emojery.app` | `z0z5ZBrlz67P2+FD+kz5ayXyFQyCCB2rQzPxPUtery4=` | `https://log.emojery.app` | [`emojery-tlog`](https://github.com/khasky/emojery-tlog) | `https://api.emojery.app` |
-| `log-staging.emojery.app` | `P37N5YTTgfbn4L1oW4lLnQM7BsHQEYgY4QpnkYLNEaM=` for g0–g4, `i9b56p+dFKKOyC5/RLR1FEwqN3on09JfqIM2JSVGcj0=` from g5 | `https://log-staging.emojery.app` | [`emojery-tlog-staging`](https://github.com/khasky/emojery-tlog-staging) | `https://api-staging.emojery.app` |
+| `log-staging.emojery.app` | `P37N5YTTgfbn4L1oW4lLnQM7BsHQEYgY4QpnkYLNEaM=` for g0–g5, `i9b56p+dFKKOyC5/RLR1FEwqN3on09JfqIM2JSVGcj0=` from g6 | `https://log-staging.emojery.app` | [`emojery-tlog-staging`](https://github.com/khasky/emojery-tlog-staging) | `https://api-staging.emojery.app` |
 
 The same file pins each log's salt commitment, the hash of the enrollment verification key, the accepted sign-in providers and the Rekor shards. A pin changes only with a release of this tool.
 
